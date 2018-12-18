@@ -1,0 +1,18 @@
+[package]
+name = "extindex"
+description = "Persisted immutable index"
+version = "0.1.0"
+authors = ["Andre-Philippe Paquet <appaquet@gmail.com>"]
+license = "Apache-2.0"
+readme = "README.md"
+keywords = ["index", "skip", "list", "persistence"]
+repository = "https://github.com/appaquet/extindex-rs"
+edition = "2018"
+
+[dependencies]
+extsort = { path = "../extsort/"}
+byteorder = "1.2.7"
+log = "0.4.6"
+
+[dev-dependencies]
+tempdir = "0.3"
