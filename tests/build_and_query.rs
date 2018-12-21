@@ -1,5 +1,5 @@
 use extindex::{Builder, Encodable, Entry, Reader};
-use std::io::Write;
+use std::io::{Read, Write};
 use tempdir;
 
 #[test]
@@ -10,7 +10,7 @@ fn simple_build_and_read() {
     let builder = Builder::new(index_file.clone());
     builder.build(create_entries(1_000)).unwrap();
 
-    let reader = Reader::<MyString, MyString>::open(&index_file).unwrap();
+    let reader = Reader::<TestString, TestString>::open(&index_file).unwrap();
     assert_eq!(find_key(&reader, "aaaa"), false);
     assert_eq!(find_key(&reader, "key:-1"), false);
     assert_eq!(find_key(&reader, "key:0"), true);
@@ -31,26 +31,28 @@ fn empty_index() {
     let builder = Builder::new(index_file.clone());
     builder.build(create_entries(0)).unwrap();
 
-    match Reader::<MyString, MyString>::open(&index_file).err() {
+    match Reader::<TestString, TestString>::open(&index_file).err() {
         Some(extindex::reader::Error::Empty) => {}
         _ => panic!("Unexpected return"),
     }
 }
 
 #[test]
-fn fuzz_build_read_0_to_1000_items() {
+fn fuzz_build_read_1_to_650_items() {
     let tempdir = tempdir::TempDir::new("extindex").unwrap();
     let index_file = tempdir.path().join("index.idx");
 
-    for nb_entries in (1..=1300).step_by(13) {
-        println!("Testing with {} entries", nb_entries);
-
+    // Test up to 4 levels (log5(650) = 4)
+    for nb_entries in (1..=650).step_by(13) {
         let builder = Builder::new(index_file.clone());
         builder.build(create_entries(nb_entries)).unwrap();
 
-        let index = Reader::<MyString, MyString>::open(&index_file).unwrap();
+        let index = Reader::<TestString, TestString>::open(&index_file).unwrap();
         for i in 0..nb_entries {
-            index.find(MyString(format!("key:{}", i))).unwrap().unwrap();
+            index
+                .find(&TestString(format!("key:{}", i)))
+                .unwrap()
+                .unwrap();
         }
     }
 }
@@ -63,7 +65,7 @@ fn extsort_build_and_read() {
     let builder = Builder::new(index_file.clone()).with_extsort_max_size(50_000);
     builder.build(create_entries(100_000)).unwrap();
 
-    let reader = Reader::<MyString, MyString>::open(&index_file).unwrap();
+    let reader = Reader::<TestString, TestString>::open(&index_file).unwrap();
     assert_eq!(find_key(&reader, "aaaa"), false);
     assert_eq!(find_key(&reader, "key:0"), true);
     assert_eq!(find_key(&reader, "key:1"), true);
@@ -86,38 +88,40 @@ fn reader_iter() {
         .collect();
     expected_keys.sort();
 
-    let reader = Reader::<MyString, MyString>::open(&index_file).unwrap();
+    let reader = Reader::<TestString, TestString>::open(&index_file).unwrap();
     for (found_item, expected_key) in reader.iter().zip(expected_keys) {
         assert_eq!(found_item.key().0, expected_key);
     }
 }
 
-fn create_entries(nb_entries: usize) -> impl Iterator<Item = Entry<MyString, MyString>> {
+fn create_entries(nb_entries: usize) -> impl Iterator<Item = Entry<TestString, TestString>> {
     (0..nb_entries).map(|idx| {
         Entry::new(
-            MyString(format!("key:{}", idx)),
-            MyString(format!("val:{}", idx)),
+            TestString(format!("key:{}", idx)),
+            TestString(format!("val:{}", idx)),
         )
     })
 }
 
-fn find_key(reader: &Reader<MyString, MyString>, key: &str) -> bool {
-    reader.find(MyString(key.to_string())).unwrap().is_some()
+fn find_key(reader: &Reader<TestString, TestString>, key: &str) -> bool {
+    reader.find(&TestString(key.to_string())).unwrap().is_some()
 }
 
 #[derive(Ord, PartialOrd, Eq, PartialEq, Debug)]
-struct MyString(String);
+struct TestString(String);
 
-impl Encodable<MyString> for MyString {
-    fn encode_size(item: &MyString) -> usize {
+impl Encodable<TestString> for TestString {
+    fn encode_size(item: &TestString) -> usize {
         item.0.as_bytes().len()
     }
 
-    fn encode(item: &MyString, write: &mut Write) -> Result<(), std::io::Error> {
+    fn encode(item: &TestString, write: &mut Write) -> Result<(), std::io::Error> {
         write.write(item.0.as_bytes()).map(|_| ())
     }
 
-    fn decode(data: &[u8]) -> Result<MyString, std::io::Error> {
-        Ok(MyString(String::from_utf8_lossy(data).to_string()))
+    fn decode(data: &mut Read, size: usize) -> Result<TestString, std::io::Error> {
+        let mut bytes = vec![0u8; size];
+        data.read_exact(&mut bytes)?;
+        Ok(TestString(String::from_utf8_lossy(&bytes).to_string()))
     }
 }

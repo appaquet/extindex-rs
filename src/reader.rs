@@ -40,7 +40,7 @@ where
         let file = File::open(path.as_ref())?;
         let file_mmap = unsafe { memmap::MmapOptions::new().map(&file)? };
 
-        let (seri_header, _header_size) = seri::Header::read(&file_mmap[..])?;
+        let (seri_header, _header_size) = seri::Header::read_slice(&file_mmap[..])?;
         let nb_levels = seri_header.nb_levels as usize;
         if nb_levels == 0 {
             return Err(Error::Empty);
@@ -54,7 +54,7 @@ where
         })
     }
 
-    pub fn find(&self, needle: K) -> Result<Option<Entry<K, V>>, Error> {
+    pub fn find(&self, needle: &K) -> Result<Option<Entry<K, V>>, Error> {
         Ok(self
             .find_entry_position(needle)?
             .map(|file_entry| file_entry.entry))
@@ -67,7 +67,7 @@ where
 
     fn read_checkpoint_and_key(&self, checkpoint_position: usize) -> Result<Checkpoint<K>, Error> {
         let (seri_checkpoint, _read_size) =
-            seri::Checkpoint::read(&self.data[checkpoint_position..], self.nb_levels)?;
+            seri::Checkpoint::read_slice(&self.data[checkpoint_position..], self.nb_levels)?;
         let previous_checkpoints = seri_checkpoint
             .levels
             .iter()
@@ -85,16 +85,13 @@ where
     }
 
     fn read_entry(&self, entry_position: usize) -> Result<FileEntry<K, V>, Error> {
-        let (seri_entry, _read_size) = seri::Entry::read(&self.data[entry_position..])?;
+        let (seri_entry, _read_size) = seri::Entry::read_slice(&self.data[entry_position..])?;
         Ok(FileEntry {
             entry: seri_entry.entry,
         })
     }
 
-    fn find_entry_position(&self, needle: K) -> Result<Option<FileEntry<K, V>>, Error> {
-        let mut stack = std::collections::LinkedList::new();
-
-        let nb_levels = self.nb_levels;
+    fn find_entry_position(&self, needle: &K) -> Result<Option<FileEntry<K, V>>, Error> {
         let last_checkpoint_position = self.last_checkpoint_position();
         let last_checkpoint = self.read_checkpoint_and_key(last_checkpoint_position)?;
         let last_checkpoint_find = FindCheckpoint {
@@ -102,14 +99,15 @@ where
             checkpoint: last_checkpoint,
         };
 
+        let mut stack = std::collections::LinkedList::new();
         stack.push_front(last_checkpoint_find);
 
         while let Some(mut current) = stack.pop_front() {
-            if current.checkpoint.entry_key == needle {
+            if current.checkpoint.entry_key == *needle {
                 return Ok(Some(
                     self.read_entry(current.checkpoint.entry_file_position)?,
                 ));
-            } else if needle < current.checkpoint.entry_key {
+            } else if *needle < current.checkpoint.entry_key {
                 let previous_checkpoint_position =
                     current.checkpoint.previous_checkpoints[current.level];
                 if previous_checkpoint_position != 0 {
@@ -121,19 +119,19 @@ where
                     };
                     stack.push_front(current);
                     stack.push_front(previous_checkpoint_find);
-                } else if current.level == nb_levels - 1 {
+                } else if current.level == self.nb_levels - 1 {
                     // we are at last level, and previous checkpoint is 0, we sequentially find entry
-                    return Ok(self.sequential_find_entry(None, &needle));
+                    return Ok(self.sequential_find_entry(None, needle));
                 } else {
                     // previous checkpoint is 0, but not a last level, so we just into a deeper level
                     current.level += 1;
                     stack.push_front(current);
                 }
-            } else if needle > current.checkpoint.entry_key {
-                if current.level == nb_levels - 1 {
+            } else if *needle > current.checkpoint.entry_key {
+                if current.level == self.nb_levels - 1 {
                     return Ok(self.sequential_find_entry(
                         Some(current.checkpoint.entry_file_position),
-                        &needle,
+                        needle,
                     ));
                 } else if let Some(previous_find) = stack.front_mut() {
                     previous_find.level += 1;
@@ -252,10 +250,4 @@ where
 {
     checkpoint: Checkpoint<K>,
     level: usize,
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn test_blabla() {}
 }

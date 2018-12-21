@@ -238,6 +238,7 @@ mod tests {
     use tempdir;
 
     use super::*;
+    use crate::tests::TestString;
 
     #[test]
     fn test_calculate_levels() {
@@ -271,31 +272,19 @@ mod tests {
         let mut data = Vec::new();
 
         for _i in 0..100 {
-            data.push(Entry::new("ccc".to_string(), "ccc".to_string()));
+            data.push(Entry::new(
+                TestString("ccc".to_string()),
+                TestString("ccc".to_string()),
+            ));
         }
 
         let tempdir = tempdir::TempDir::new("extindex").unwrap();
         let index_path = tempdir.path().join("index.idx");
-        let builder = Builder::<String, String>::new(index_path.clone());
+        let builder = Builder::<TestString, TestString>::new(index_path.clone());
 
         builder.build(data.into_iter()).unwrap();
 
         let file_meta = std::fs::metadata(&index_path).unwrap();
         assert!(file_meta.len() > 10);
-    }
-
-    impl Encodable<String> for String {
-        fn encode_size(item: &String) -> usize {
-            item.as_bytes().len()
-        }
-
-        fn encode(item: &String, write: &mut Write) -> Result<(), std::io::Error> {
-            write.write(item.as_bytes())?;
-            Ok(())
-        }
-
-        fn decode(data: &[u8]) -> Result<String, std::io::Error> {
-            Ok(String::from_utf8_lossy(data).to_string())
-        }
     }
 }

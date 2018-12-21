@@ -17,7 +17,7 @@ mod utils;
 pub trait Encodable<T> {
     fn encode_size(item: &T) -> usize;
     fn encode(item: &T, write: &mut Write) -> Result<(), std::io::Error>;
-    fn decode(data: &[u8]) -> Result<T, std::io::Error>;
+    fn decode(data: &mut Read, size: usize) -> Result<T, std::io::Error>;
 }
 
 pub struct Entry<K, V>
@@ -58,7 +58,7 @@ where
     }
 
     fn decode(read: &mut Read) -> Option<Entry<K, V>> {
-        let (entry, _read_size) = seri::Entry::read_cursor(read).ok()?;
+        let (entry, _read_size) = seri::Entry::read(read).ok()?;
         Some(entry.entry)
     }
 }
@@ -102,6 +102,8 @@ where
 
 #[cfg(test)]
 pub mod tests {
+    use super::*;
+
     #[derive(Ord, PartialOrd, Eq, PartialEq, Debug)]
     pub struct TestString(pub String);
 
@@ -114,8 +116,10 @@ pub mod tests {
             write.write(item.0.as_bytes()).map(|_| ())
         }
 
-        fn decode(data: &[u8]) -> Result<TestString, std::io::Error> {
-            Ok(TestString(String::from_utf8_lossy(data).to_string()))
+        fn decode(data: &mut Read, size: usize) -> Result<TestString, std::io::Error> {
+            let mut bytes = vec![0u8; size];
+            data.read_exact(&mut bytes)?;
+            Ok(TestString(String::from_utf8_lossy(&bytes).to_string()))
         }
     }
 }

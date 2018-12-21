@@ -28,7 +28,7 @@ impl Header {
         Ok(())
     }
 
-    pub fn read(data: &[u8]) -> Result<(Header, usize), Error> {
+    pub fn read_slice(data: &[u8]) -> Result<(Header, usize), Error> {
         let mut cursor = Cursor::new(data);
 
         let mut magic_buf = [0u8; INDEX_FILE_MAGIC_HEADER_SIZE];
@@ -75,7 +75,7 @@ impl Checkpoint {
         Ok(())
     }
 
-    pub fn read(data: &[u8], nb_levels: usize) -> Result<(Checkpoint, usize), Error> {
+    pub fn read_slice(data: &[u8], nb_levels: usize) -> Result<(Checkpoint, usize), Error> {
         let mut checkpoint_cursor = Cursor::new(data);
         let item_id = checkpoint_cursor.read_u8()?;
         if item_id != OBJECT_ID_CHECKPOINT {
@@ -84,7 +84,7 @@ impl Checkpoint {
 
         // TODO: Test performance of this heap alloc vs hard coding max size vec on stack
         let entry_position = checkpoint_cursor.read_u64::<LittleEndian>()?;
-        let mut levels = Vec::new();
+        let mut levels = Vec::with_capacity(nb_levels);
         for _i in 0..nb_levels {
             let previous_checkpoint_position = checkpoint_cursor.read_u64::<LittleEndian>()?;
             levels.push(CheckpointLevel {
@@ -138,12 +138,12 @@ where
         Ok(())
     }
 
-    pub fn read(data: &[u8]) -> Result<(Entry<K, V>, usize), Error> {
+    pub fn read_slice(data: &[u8]) -> Result<(Entry<K, V>, usize), Error> {
         let mut data_cursor = Cursor::new(data);
-        Self::read_cursor(&mut data_cursor)
+        Self::read(&mut data_cursor)
     }
 
-    pub fn read_cursor(data_cursor: &mut Read) -> Result<(Entry<K, V>, usize), Error> {
+    pub fn read(data_cursor: &mut Read) -> Result<(Entry<K, V>, usize), Error> {
         let item_id = data_cursor.read_u8()?;
         if item_id != OBJECT_ID_ENTRY {
             return Err(Error::InvalidObjectType);
@@ -151,18 +151,10 @@ where
 
         let key_size = data_cursor.read_u16::<LittleEndian>()? as usize;
         let data_size = data_cursor.read_u16::<LittleEndian>()? as usize;
-        let key_position = 1 + 2 + 2;
-        let data_position = key_position + key_size;
+        let key = <K as Encodable<K>>::decode(data_cursor, key_size)?;
+        let value = <V as Encodable<V>>::decode(data_cursor, data_size)?;
 
-        let mut key_buf = vec![0u8; key_size];
-        data_cursor.read_exact(&mut key_buf)?;
-        let key = <K as Encodable<K>>::decode(&key_buf)?;
-
-        let mut value_buf = vec![0u8; data_size];
-        data_cursor.read_exact(&mut value_buf)?;
-        let value = <V as Encodable<V>>::decode(&value_buf)?;
-
-        let entry_file_size = data_position + data_size;
+        let entry_file_size = 1 + 2 + 2 + key_size + data_size;
         let entry = CrateEntry { key, value };
         Ok((Entry { entry }, entry_file_size))
     }
@@ -176,9 +168,9 @@ where
         }
 
         let key_size = data_cursor.read_u16::<LittleEndian>()? as usize;
-        let key_position = 1 + 2 + 2;
+        let _data_size = data_cursor.read_u16::<LittleEndian>()? as usize;
 
-        let key = <K as Encodable<K>>::decode(&data[key_position..key_position + key_size])?;
+        let key = <K as Encodable<K>>::decode(&mut data_cursor, key_size)?;
         Ok(key)
     }
 }
@@ -203,10 +195,10 @@ where
         }
 
         if data[0] == OBJECT_ID_CHECKPOINT {
-            let (chk, size) = Checkpoint::read(data, nb_levels)?;
+            let (chk, size) = Checkpoint::read_slice(data, nb_levels)?;
             Ok((Object::Checkpoint(chk), size))
         } else if data[0] == OBJECT_ID_ENTRY {
-            let (entry, size) = Entry::read(data)?;
+            let (entry, size) = Entry::read_slice(data)?;
             Ok((Object::Entry(entry), size))
         } else {
             Err(Error::InvalidObjectType)
@@ -241,7 +233,7 @@ mod tests {
         let header = Header { nb_levels: 123 };
         header.write(&mut data).ok().unwrap();
 
-        let (read_header, size) = Header::read(&data).ok().unwrap();
+        let (read_header, size) = Header::read_slice(&data).ok().unwrap();
         assert_eq!(read_header.nb_levels, 123);
         assert_eq!(Header::size(), data.len());
         assert_eq!(data.len(), size);
@@ -259,7 +251,7 @@ mod tests {
         };
         checkpoint.write(&mut data).ok().unwrap();
 
-        let (read_checkpoint, size) = Checkpoint::read(&data, 1).ok().unwrap();
+        let (read_checkpoint, size) = Checkpoint::read_slice(&data, 1).ok().unwrap();
         assert_eq!(read_checkpoint.entry_position, 1234);
         assert_eq!(read_checkpoint.levels.len(), 1);
         assert_eq!(read_checkpoint.levels[0].previous_position, 1000);
@@ -279,7 +271,9 @@ mod tests {
         };
         entry.write(&mut data).ok().unwrap();
 
-        let (read_entry, size) = Entry::<TestString, TestString>::read(&data).ok().unwrap();
+        let (read_entry, size) = Entry::<TestString, TestString>::read_slice(&data)
+            .ok()
+            .unwrap();
         assert_eq!(read_entry.entry.key, TestString("key".to_string()));
         assert_eq!(read_entry.entry.value, TestString("value".to_string()));
         assert_eq!(size, data.len());
