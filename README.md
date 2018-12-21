@@ -1,4 +1,6 @@
 
+Limitation:
+* File cannot be bigger than CPU architecture (usize)
 
 TODO:
 - [ ] Bloom filter ? 

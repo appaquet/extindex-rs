@@ -1,19 +1,13 @@
 use std;
-use std::cmp::Ordering;
-use std::fs::{File, OpenOptions};
-use std::io::{BufWriter, Read, Write};
-use std::path::{Path, PathBuf};
+use std::fs::OpenOptions;
+use std::io::{BufWriter, Write};
+use std::path::PathBuf;
 
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use extsort::ExternalSorter;
 
-use extsort::{ExternalSorter, Sortable};
-
+use crate::seri;
 use crate::utils::CountedWrite;
 use crate::{Encodable, Entry};
-
-const MAX_LEVELS: usize = 256;
-const MAX_KEY_SIZE_BYTES: usize = 1024;
-const MAX_VALUE_SIZE_BYTES: usize = 65000;
 
 pub struct Builder<K, V>
 where
@@ -22,6 +16,7 @@ where
 {
     path: PathBuf,
     log_base: f64,
+    extsort_max_size: Option<usize>,
     phantom: std::marker::PhantomData<(K, V)>,
 }
 
@@ -34,8 +29,19 @@ where
         Builder {
             path,
             log_base: 5.0,
+            extsort_max_size: None,
             phantom: std::marker::PhantomData,
         }
+    }
+
+    pub fn with_log_base(mut self, log_base: f64) -> Self {
+        self.log_base = log_base;
+        self
+    }
+
+    pub fn with_extsort_max_size(mut self, max_size: usize) -> Self {
+        self.extsort_max_size = Some(max_size);
+        self
     }
 
     pub fn build<I>(self, iter: I) -> Result<(), Error>
@@ -48,6 +54,10 @@ where
         let mut sorter = ExternalSorter::new();
         sorter.set_sort_dir(sort_dir);
 
+        if let Some(max_size) = self.extsort_max_size {
+            sorter.set_max_size(max_size);
+        }
+
         let sorted_iter = sorter.sort(iter)?;
         let sorted_count = sorted_iter.sorted_count();
 
@@ -58,113 +68,106 @@ where
     where
         I: Iterator<Item = Entry<K, V>>,
     {
-        let mut file = OpenOptions::new()
+        let file = OpenOptions::new()
             .create(true)
             .truncate(true)
             .read(false)
             .write(true)
             .open(&self.path)?;
-        let mut buffered_output = BufWriter::new(file);
+        let buffered_output = BufWriter::new(file);
         let mut counted_output = CountedWrite::new(buffered_output);
 
         let mut levels = levels_for_items_count(nb_items, self.log_base);
-        if levels.len() > MAX_LEVELS {
+        if levels.len() > seri::MAX_LEVELS {
             return Err(Error::MaxSize);
         }
 
         self.write_header(&mut counted_output, &levels)?;
 
-        // how often we write checkpoint is the expected items at last level
-        let checkpoint_interval = levels.last().unwrap().expected_items;
+        if !levels.is_empty() {
+            // how often we write checkpoint is the expected items at last level
+            let checkpoint_interval = levels.last().unwrap().expected_items;
 
-        let mut entries_since_last_checkpoint = 0;
-        let mut last_entry_position: u64 = 0;
-        for entry in iter {
-            last_entry_position = counted_output.written_count();
-            self.write_entry(&mut counted_output, entry)?;
-            entries_since_last_checkpoint += 1;
+            let mut entries_since_last_checkpoint = 0;
+            let mut last_entry_position: u64 = 0;
+            for entry in iter {
+                last_entry_position = counted_output.written_count();
+                self.write_entry(&mut counted_output, entry)?;
+                entries_since_last_checkpoint += 1;
 
-            if entries_since_last_checkpoint >= checkpoint_interval {
-                for level in &mut levels {
-                    level.current_items += entries_since_last_checkpoint;
+                if entries_since_last_checkpoint >= checkpoint_interval {
+                    for level in &mut levels {
+                        level.current_items += entries_since_last_checkpoint;
+                    }
+
+                    let current_position = counted_output.written_count();
+                    self.write_checkpoint(
+                        &mut counted_output,
+                        current_position,
+                        last_entry_position,
+                        &mut levels,
+                        false,
+                    )?;
+                    entries_since_last_checkpoint = 0;
                 }
+            }
 
+            // if we have written any items since last checkpoint
+            if entries_since_last_checkpoint > 0 {
                 let current_position = counted_output.written_count();
-                self.write_levels_checkpoint(
+                self.write_checkpoint(
                     &mut counted_output,
                     current_position,
                     last_entry_position,
                     &mut levels,
-                    false,
+                    true,
                 )?;
-                entries_since_last_checkpoint = 0;
             }
-        }
-
-        // if we have written any items since last checkpoint
-        if entries_since_last_checkpoint > 0 {
-            let current_position = counted_output.written_count();
-            self.write_levels_checkpoint(
-                &mut counted_output,
-                current_position,
-                last_entry_position,
-                &mut levels,
-                true,
-            )?;
         }
 
         Ok(())
     }
 
     fn write_header(&self, output: &mut Write, levels: &[Level]) -> Result<(), Error> {
-        output.write(&crate::INDEX_FILE_MAGIC_HEADER)?;
-        output.write(&[crate::INDEX_FILE_VERSION])?;
-        output.write_u8(levels.len() as u8)?;
-
+        let seri_header = seri::Header {
+            nb_levels: levels.len() as u8,
+        };
+        seri_header.write(output)?;
         Ok(())
     }
 
     fn write_entry(&self, output: &mut Write, entry: Entry<K, V>) -> Result<(), Error> {
-        let key_size = <K as Encodable<K>>::encode_size(&entry.key);
-        let value_size = <V as Encodable<V>>::encode_size(&entry.value);
-
-        if key_size > MAX_KEY_SIZE_BYTES || value_size > MAX_VALUE_SIZE_BYTES {
-            error!(
-                "One item exceeds maximum encoded size: key {} > {} OR value {} > {}",
-                key_size, MAX_KEY_SIZE_BYTES, value_size, MAX_VALUE_SIZE_BYTES
-            );
-            return Err(Error::InvalidItem);
-        }
-
-        output.write_u16::<LittleEndian>(key_size as u16)?;
-        output.write_u16::<LittleEndian>(value_size as u16)?;
-        <K as Encodable<K>>::encode(&entry.key, output)?;
-        <V as Encodable<V>>::encode(&entry.value, output)?;
-
+        let seri_entry = seri::Entry { entry };
+        seri_entry.write(output)?;
         Ok(())
     }
 
-    fn write_levels_checkpoint(
+    fn write_checkpoint(
         &self,
         output: &mut Write,
         current_position: u64,
-        last_entry_position: u64,
+        entry_position: u64,
         levels: &mut [Level],
         force_write: bool,
     ) -> Result<(), Error> {
-        output.write_u64::<LittleEndian>(last_entry_position)?;
+        let seri_levels = levels
+            .iter()
+            .map(|level| seri::CheckpointLevel {
+                previous_position: level.last_item.unwrap_or(0),
+            })
+            .collect();
+        let seri_checkpoint = seri::Checkpoint {
+            entry_position,
+            levels: seri_levels,
+        };
+        seri_checkpoint.write(output)?;
 
-        for (idx, level) in levels.iter_mut().enumerate() {
-            output.write_u64::<LittleEndian>(level.last_item.unwrap_or(0))?;
-
+        for level in levels.iter_mut() {
             const WRITE_UPCOMING_WITHIN_DISTANCE: u64 = 2;
             if force_write
+                || level.current_items > level.expected_items
                 || (level.expected_items - level.current_items) <= WRITE_UPCOMING_WITHIN_DISTANCE
             {
-                println!(
-                    "Level {} Pos {} Item {} Last {:?} Force {}",
-                    idx, current_position, last_entry_position, level.last_item, force_write
-                );
                 level.last_item = Some(current_position);
                 level.current_items = 0;
             }
@@ -172,25 +175,26 @@ where
 
         Ok(())
     }
-
-    fn write_footer(&self, output: &mut Write, levels: &[Level]) -> Result<(), Error> {
-        for level in levels {}
-        Ok(())
-    }
 }
 
 fn levels_for_items_count(nb_items: u64, log_base: f64) -> Vec<Level> {
+    if nb_items == 0 {
+        return Vec::new();
+    }
+
     let nb_levels = (nb_items as f64).log(log_base).round().max(1.0) as u64;
     let log_base_u64 = log_base as u64;
 
     let mut levels = Vec::new();
     let mut max_items = (nb_items / log_base_u64).max(1);
-    for idx in 0..nb_levels {
-        if levels.len() != 0 && max_items < log_base_u64 {
+    for level_id in 0..nb_levels {
+        // we don't want to create an extra level with only a few items per checkpoint
+        if !levels.is_empty() && max_items < 2 {
             break;
         }
 
         levels.push(Level {
+            id: level_id as usize,
             expected_items: max_items,
             current_items: 0,
             last_item: None,
@@ -203,6 +207,7 @@ fn levels_for_items_count(nb_items: u64, log_base: f64) -> Vec<Level> {
 
 #[derive(Debug)]
 struct Level {
+    id: usize,
     expected_items: u64,
     current_items: u64,
     last_item: Option<u64>,
@@ -212,12 +217,19 @@ struct Level {
 pub enum Error {
     MaxSize,
     InvalidItem,
+    Serialization(seri::Error),
     IO(std::io::Error),
 }
 
 impl From<std::io::Error> for Error {
     fn from(err: std::io::Error) -> Self {
         Error::IO(err)
+    }
+}
+
+impl From<seri::Error> for Error {
+    fn from(err: seri::Error) -> Self {
+        Error::Serialization(err)
     }
 }
 
@@ -231,7 +243,7 @@ mod tests {
     fn test_calculate_levels() {
         let levels = levels_for_items_count(0, 5.0);
         let levels_items = levels.iter().map(|l| l.expected_items).collect::<Vec<_>>();
-        assert_eq!(levels_items, vec![1]); // 0 items would still have 1 item per level
+        assert_eq!(levels_items, vec![]);
 
         let levels = levels_for_items_count(1, 5.0);
         let levels_items = levels.iter().map(|l| l.expected_items).collect::<Vec<_>>();
@@ -240,6 +252,10 @@ mod tests {
         let levels = levels_for_items_count(20, 5.0);
         let levels_items = levels.iter().map(|l| l.expected_items).collect::<Vec<_>>();
         assert_eq!(levels_items, vec![4]);
+
+        let levels = levels_for_items_count(100, 5.0);
+        let levels_items = levels.iter().map(|l| l.expected_items).collect::<Vec<_>>();
+        assert_eq!(levels_items, vec![20, 4]);
 
         let levels = levels_for_items_count(1_000, 5.0);
         let levels_items = levels.iter().map(|l| l.expected_items).collect::<Vec<_>>();
@@ -252,10 +268,10 @@ mod tests {
 
     #[test]
     fn test_build_from_unsorted() {
-        let mut data= Vec::new();
+        let mut data = Vec::new();
 
-        for i in 0..100 {
-            data.push(crate::Entry::new("ccc".to_string(), "ccc".to_string()));
+        for _i in 0..100 {
+            data.push(Entry::new("ccc".to_string(), "ccc".to_string()));
         }
 
         let tempdir = tempdir::TempDir::new("extindex").unwrap();

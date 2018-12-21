@@ -1,16 +1,17 @@
-
 #[macro_use]
 extern crate log;
 
-use extsort::{ExternalSorter, Sortable};
 use std::cmp::Ordering;
 use std::io::{Read, Write};
 
-const INDEX_FILE_MAGIC_HEADER: [u8; 2] = [40, 12];
-const INDEX_FILE_VERSION: u8 = 0;
+use extsort::Sortable;
 
 pub mod builder;
-pub mod index;
+pub mod reader;
+pub use crate::builder::Builder;
+pub use crate::reader::Reader;
+
+mod seri;
 mod utils;
 
 pub trait Encodable<T> {
@@ -18,7 +19,6 @@ pub trait Encodable<T> {
     fn encode(item: &T, write: &mut Write) -> Result<(), std::io::Error>;
     fn decode(data: &[u8]) -> Result<T, std::io::Error>;
 }
-
 
 pub struct Entry<K, V>
 where
@@ -29,15 +29,21 @@ where
     value: V,
 }
 
-impl <K,V> Entry<K,V>
-    where
-        K: Ord + Encodable<K>,
-        V: Encodable<V>,
+impl<K, V> Entry<K, V>
+where
+    K: Ord + Encodable<K>,
+    V: Encodable<V>,
 {
     pub fn new(key: K, value: V) -> Entry<K, V> {
-        Entry {
-            key, value
-        }
+        Entry { key, value }
+    }
+
+    pub fn key(&self) -> &K {
+        &self.key
+    }
+
+    pub fn value(&self) -> &V {
+        &self.value
     }
 }
 
@@ -46,12 +52,14 @@ where
     K: Ord + Encodable<K>,
     V: Encodable<V>,
 {
-    fn encode(item: &Entry<K, V>, write: &mut Write) {
-        unimplemented!()
+    fn encode(entry: Entry<K, V>, output: &mut Write) {
+        let seri_entry = seri::Entry { entry };
+        let _ = seri_entry.write(output);
     }
 
     fn decode(read: &mut Read) -> Option<Entry<K, V>> {
-        unimplemented!()
+        let (entry, _read_size) = seri::Entry::read_cursor(read).ok()?;
+        Some(entry.entry)
     }
 }
 
@@ -90,4 +98,24 @@ where
     K: Ord + Encodable<K>,
     V: Encodable<V>,
 {
+}
+
+#[cfg(test)]
+pub mod tests {
+    #[derive(Ord, PartialOrd, Eq, PartialEq, Debug)]
+    pub struct TestString(pub String);
+
+    impl super::Encodable<TestString> for TestString {
+        fn encode_size(item: &TestString) -> usize {
+            item.0.as_bytes().len()
+        }
+
+        fn encode(item: &TestString, write: &mut std::io::Write) -> Result<(), std::io::Error> {
+            write.write(item.0.as_bytes()).map(|_| ())
+        }
+
+        fn decode(data: &[u8]) -> Result<TestString, std::io::Error> {
+            Ok(TestString(String::from_utf8_lossy(data).to_string()))
+        }
+    }
 }

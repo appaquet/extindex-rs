@@ -40,7 +40,7 @@ mod tests {
 
         let mut counted = CountedWrite::new(&mut buf);
         assert_eq!(counted.written_count(), 0);
-        counted.write(&[0, 1, 2]);
+        counted.write(&[0, 1, 2]).unwrap();
         assert_eq!(counted.written_count(), 3);
     }
 
@@ -48,7 +48,7 @@ mod tests {
     fn test_not_completely_written() {
         struct MockWrite;
         impl Write for MockWrite {
-            fn write(&mut self, buf: &[u8]) -> Result<usize, Error> {
+            fn write(&mut self, _buf: &[u8]) -> Result<usize, Error> {
                 Ok(1)
             }
 
@@ -59,7 +59,7 @@ mod tests {
 
         let mut counted = CountedWrite::new(MockWrite);
         assert_eq!(counted.written_count(), 0);
-        counted.write(&[0, 1, 2]);
+        counted.write(&[0, 1, 2]).unwrap();
         assert_eq!(counted.written_count(), 1);
     }
 }
