@@ -73,6 +73,25 @@ fn extsort_build_and_read() {
     assert_eq!(find_key(&reader, "key:100000"), false);
 }
 
+#[test]
+fn reader_iter() {
+    let tempdir = tempdir::TempDir::new("extindex").unwrap();
+    let index_file = tempdir.path().join("index.idx");
+    let builder = Builder::new(index_file.clone());
+    builder.build(create_entries(1_000)).unwrap();
+
+    // extract keys and sort in alphanumerical order
+    let mut expected_keys: Vec<String> = create_entries(1_000)
+        .map(|entry| entry.key().0.clone())
+        .collect();
+    expected_keys.sort();
+
+    let reader = Reader::<MyString, MyString>::open(&index_file).unwrap();
+    for (found_item, expected_key) in reader.iter().zip(expected_keys) {
+        assert_eq!(found_item.key().0, expected_key);
+    }
+}
+
 fn create_entries(nb_entries: usize) -> impl Iterator<Item = Entry<MyString, MyString>> {
     (0..nb_entries).map(|idx| {
         Entry::new(

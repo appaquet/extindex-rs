@@ -60,6 +60,11 @@ where
             .map(|file_entry| file_entry.entry))
     }
 
+    pub fn iter<'a>(&'a self) -> impl Iterator<Item = Entry<K, V>> + 'a {
+        self.iterate_entries_from_position(None)
+            .map(|file_entry| file_entry.entry)
+    }
+
     fn read_checkpoint_and_key(&self, checkpoint_position: usize) -> Result<Checkpoint<K>, Error> {
         let (seri_checkpoint, _read_size) =
             seri::Checkpoint::read(&self.data[checkpoint_position..], self.nb_levels)?;
