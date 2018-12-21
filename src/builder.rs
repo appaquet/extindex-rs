@@ -153,7 +153,7 @@ where
         let seri_levels = levels
             .iter()
             .map(|level| seri::CheckpointLevel {
-                previous_position: level.last_item.unwrap_or(0),
+                next_position: level.last_item.unwrap_or(0),
             })
             .collect();
         let seri_checkpoint = seri::Checkpoint {

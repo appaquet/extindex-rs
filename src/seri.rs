@@ -60,7 +60,7 @@ pub struct Checkpoint {
 }
 
 pub struct CheckpointLevel {
-    pub previous_position: u64,
+    pub next_position: u64,
 }
 
 impl Checkpoint {
@@ -69,7 +69,7 @@ impl Checkpoint {
         output.write_u64::<LittleEndian>(self.entry_position)?;
 
         for level in &self.levels {
-            output.write_u64::<LittleEndian>(level.previous_position)?;
+            output.write_u64::<LittleEndian>(level.next_position)?;
         }
 
         Ok(())
@@ -88,7 +88,7 @@ impl Checkpoint {
         for _i in 0..nb_levels {
             let previous_checkpoint_position = checkpoint_cursor.read_u64::<LittleEndian>()?;
             levels.push(CheckpointLevel {
-                previous_position: previous_checkpoint_position,
+                next_position: previous_checkpoint_position,
             })
         }
 
@@ -246,7 +246,7 @@ mod tests {
         let checkpoint = Checkpoint {
             entry_position: 1234,
             levels: vec![CheckpointLevel {
-                previous_position: 1000,
+                next_position: 1000,
             }],
         };
         checkpoint.write(&mut data).ok().unwrap();
@@ -254,7 +254,7 @@ mod tests {
         let (read_checkpoint, size) = Checkpoint::read_slice(&data, 1).ok().unwrap();
         assert_eq!(read_checkpoint.entry_position, 1234);
         assert_eq!(read_checkpoint.levels.len(), 1);
-        assert_eq!(read_checkpoint.levels[0].previous_position, 1000);
+        assert_eq!(read_checkpoint.levels[0].next_position, 1000);
         assert_eq!(Checkpoint::size(1), data.len());
         assert_eq!(size, data.len());
     }
@@ -292,7 +292,7 @@ mod tests {
         let checkpoint = Checkpoint {
             entry_position: 1234,
             levels: vec![CheckpointLevel {
-                previous_position: 1000,
+                next_position: 1000,
             }],
         };
         checkpoint.write(&mut cursor).ok().unwrap();

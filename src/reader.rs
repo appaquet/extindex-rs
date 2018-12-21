@@ -13,6 +13,7 @@ where
     _file: File,
     data: memmap::Mmap,
     nb_levels: usize,
+    last_checkpoint_position: usize,
     phantom: std::marker::PhantomData<(K, V)>,
 }
 
@@ -46,10 +47,13 @@ where
             return Err(Error::Empty);
         }
 
+        let last_checkpoint_position = file_mmap.len() - seri::Checkpoint::size(nb_levels);
+
         Ok(Reader {
             _file: file,
             data: file_mmap,
             nb_levels,
+            last_checkpoint_position,
             phantom: std::marker::PhantomData,
         })
     }
@@ -68,10 +72,10 @@ where
     fn read_checkpoint_and_key(&self, checkpoint_position: usize) -> Result<Checkpoint<K>, Error> {
         let (seri_checkpoint, _read_size) =
             seri::Checkpoint::read_slice(&self.data[checkpoint_position..], self.nb_levels)?;
-        let previous_checkpoints = seri_checkpoint
+        let next_checkpoints = seri_checkpoint
             .levels
             .iter()
-            .map(|checkpoint| checkpoint.previous_position as usize)
+            .map(|checkpoint| checkpoint.next_position as usize)
             .collect();
 
         let entry_file_position = seri_checkpoint.entry_position as usize;
@@ -80,7 +84,7 @@ where
         Ok(Checkpoint {
             entry_key,
             entry_file_position,
-            previous_checkpoints,
+            next_checkpoints,
         })
     }
 
@@ -92,8 +96,7 @@ where
     }
 
     fn find_entry_position(&self, needle: &K) -> Result<Option<FileEntry<K, V>>, Error> {
-        let last_checkpoint_position = self.last_checkpoint_position();
-        let last_checkpoint = self.read_checkpoint_and_key(last_checkpoint_position)?;
+        let last_checkpoint = self.read_checkpoint_and_key(self.last_checkpoint_position)?;
         let last_checkpoint_find = FindCheckpoint {
             level: 0,
             checkpoint: last_checkpoint,
@@ -108,32 +111,33 @@ where
                     self.read_entry(current.checkpoint.entry_file_position)?,
                 ));
             } else if *needle < current.checkpoint.entry_key {
-                let previous_checkpoint_position =
-                    current.checkpoint.previous_checkpoints[current.level];
-                if previous_checkpoint_position != 0 {
-                    let prev_checkpoint =
-                        self.read_checkpoint_and_key(previous_checkpoint_position)?;
-                    let previous_checkpoint_find = FindCheckpoint {
+                let next_checkpoint_position = current.checkpoint.next_checkpoints[current.level];
+                if next_checkpoint_position != 0 {
+                    // go to next checkpoint
+                    let next_checkpoint = self.read_checkpoint_and_key(next_checkpoint_position)?;
+                    let next_checkpoint_find = FindCheckpoint {
                         level: current.level,
-                        checkpoint: prev_checkpoint,
+                        checkpoint: next_checkpoint,
                     };
                     stack.push_front(current);
-                    stack.push_front(previous_checkpoint_find);
+                    stack.push_front(next_checkpoint_find);
                 } else if current.level == self.nb_levels - 1 {
-                    // we are at last level, and previous checkpoint is 0, we sequentially find entry
+                    // we are at last level, and next checkpoint is 0, we sequentially find entry
                     return Ok(self.sequential_find_entry(None, needle));
                 } else {
-                    // previous checkpoint is 0, but not a last level, so we just into a deeper level
+                    // next checkpoint is 0, but not a last level, so we just into a deeper level
                     current.level += 1;
                     stack.push_front(current);
                 }
             } else if *needle > current.checkpoint.entry_key {
                 if current.level == self.nb_levels - 1 {
+                    // we reached last level, we need to iterate to entry
                     return Ok(self.sequential_find_entry(
                         Some(current.checkpoint.entry_file_position),
                         needle,
                     ));
                 } else if let Some(previous_find) = stack.front_mut() {
+                    // we go a level deeper into previous checkpoint
                     previous_find.level += 1;
                 }
             }
@@ -162,10 +166,6 @@ where
             .skip_while(|read_entry| read_entry.entry.key < *needle)
             .next()
             .filter(|read_entry| read_entry.entry.key == *needle)
-    }
-
-    fn last_checkpoint_position(&self) -> usize {
-        self.data.len() - seri::Checkpoint::size(self.nb_levels)
     }
 }
 
@@ -241,7 +241,7 @@ where
 {
     entry_key: K,
     entry_file_position: usize,
-    previous_checkpoints: Vec<usize>,
+    next_checkpoints: Vec<usize>,
 }
 
 struct FindCheckpoint<K>
