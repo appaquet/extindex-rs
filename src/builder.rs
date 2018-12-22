@@ -1,3 +1,17 @@
+// Copyright 2018 Andre-Philippe Paquet
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use std;
 use std::fs::OpenOptions;
 use std::io::{BufWriter, Write};
@@ -8,6 +22,9 @@ use extsort::ExternalSorter;
 use crate::seri;
 use crate::utils::CountedWrite;
 use crate::{Encodable, Entry};
+
+const CHECKPOINT_WRITE_UPCOMING_WITHIN_DISTANCE: u64 = 3;
+const LEVELS_MINIMUM_ITEMS: u64 = 2;
 
 pub struct Builder<K, V>
 where
@@ -112,7 +129,6 @@ where
                 }
             }
 
-            // if we have written any items since last checkpoint
             if entries_since_last_checkpoint > 0 {
                 let current_position = counted_output.written_count();
                 self.write_checkpoint(
@@ -163,10 +179,10 @@ where
         seri_checkpoint.write(output)?;
 
         for level in levels.iter_mut() {
-            const WRITE_UPCOMING_WITHIN_DISTANCE: u64 = 2;
             if force_write
                 || level.current_items > level.expected_items
-                || (level.expected_items - level.current_items) <= WRITE_UPCOMING_WITHIN_DISTANCE
+                || (level.expected_items - level.current_items)
+                    <= CHECKPOINT_WRITE_UPCOMING_WITHIN_DISTANCE
             {
                 level.last_item = Some(current_position);
                 level.current_items = 0;
@@ -189,7 +205,7 @@ fn levels_for_items_count(nb_items: u64, log_base: f64) -> Vec<Level> {
     let mut max_items = (nb_items / log_base_u64).max(1);
     for level_id in 0..nb_levels {
         // we don't want to create an extra level with only a few items per checkpoint
-        if !levels.is_empty() && max_items < 2 {
+        if !levels.is_empty() && max_items < LEVELS_MINIMUM_ITEMS {
             break;
         }
 
@@ -241,7 +257,7 @@ mod tests {
     use crate::tests::TestString;
 
     #[test]
-    fn test_calculate_levels() {
+    fn calculate_levels() {
         let levels = levels_for_items_count(0, 5.0);
         let levels_items = levels.iter().map(|l| l.expected_items).collect::<Vec<_>>();
         assert_eq!(levels_items, vec![]);
@@ -268,7 +284,7 @@ mod tests {
     }
 
     #[test]
-    fn test_build_from_unsorted() {
+    fn build_from_unsorted() {
         let mut data = Vec::new();
 
         for _i in 0..100 {

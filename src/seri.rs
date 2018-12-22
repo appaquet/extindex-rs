@@ -1,3 +1,17 @@
+// Copyright 2018 Andre-Philippe Paquet
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use std;
 use std::io::{Cursor, Read, Write};
 
@@ -227,7 +241,7 @@ mod tests {
     use crate::tests::TestString;
 
     #[test]
-    fn test_head_write_read() {
+    fn head_write_read() {
         let mut data = Vec::new();
 
         let header = Header { nb_levels: 123 };
@@ -240,7 +254,7 @@ mod tests {
     }
 
     #[test]
-    fn test_checkpoint_write_read() {
+    fn checkpoint_write_read() {
         let mut data = Vec::new();
 
         let checkpoint = Checkpoint {
@@ -260,7 +274,7 @@ mod tests {
     }
 
     #[test]
-    fn test_entry_write_read() {
+    fn entry_write_read() {
         let mut data = Vec::new();
 
         let entry = Entry {
@@ -285,7 +299,7 @@ mod tests {
     }
 
     #[test]
-    fn test_object_write_read() {
+    fn object_write_read() {
         let mut data = Vec::new();
         let mut cursor = Cursor::new(&mut data);
 
