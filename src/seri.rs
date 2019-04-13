@@ -42,19 +42,19 @@ impl Header {
         Ok(())
     }
 
-    pub fn read_slice(data: &[u8]) -> Result<(Header, usize), Error> {
+    pub fn read_slice(data: &[u8]) -> Result<(Header, usize), SerializationError> {
         let mut cursor = Cursor::new(data);
 
         let mut magic_buf = [0u8; INDEX_FILE_MAGIC_HEADER_SIZE];
         cursor.read_exact(&mut magic_buf)?;
 
         if magic_buf != INDEX_FILE_MAGIC_HEADER {
-            return Err(Error::InvalidFormat);
+            return Err(SerializationError::InvalidFormat);
         }
 
         let version = cursor.read_u8()?;
         if version != INDEX_FILE_VERSION {
-            return Err(Error::InvalidVersion);
+            return Err(SerializationError::InvalidVersion);
         }
 
         let nb_levels = cursor.read_u8()?;
@@ -78,7 +78,7 @@ pub struct CheckpointLevel {
 }
 
 impl Checkpoint {
-    pub fn write(&self, output: &mut Write) -> Result<(), Error> {
+    pub fn write(&self, output: &mut Write) -> Result<(), SerializationError> {
         output.write_u8(OBJECT_ID_CHECKPOINT)?;
         output.write_u64::<LittleEndian>(self.entry_position)?;
 
@@ -89,11 +89,14 @@ impl Checkpoint {
         Ok(())
     }
 
-    pub fn read_slice(data: &[u8], nb_levels: usize) -> Result<(Checkpoint, usize), Error> {
+    pub fn read_slice(
+        data: &[u8],
+        nb_levels: usize,
+    ) -> Result<(Checkpoint, usize), SerializationError> {
         let mut checkpoint_cursor = Cursor::new(data);
         let item_id = checkpoint_cursor.read_u8()?;
         if item_id != OBJECT_ID_CHECKPOINT {
-            return Err(Error::InvalidObjectType);
+            return Err(SerializationError::InvalidObjectType);
         }
 
         // TODO: Test performance of this heap alloc vs hard coding max size vec on stack
@@ -135,12 +138,12 @@ where
     K: Ord + Encodable<K>,
     V: Encodable<V>,
 {
-    pub fn write(&self, output: &mut Write) -> Result<(), Error> {
+    pub fn write(&self, output: &mut Write) -> Result<(), SerializationError> {
         let key_size = <K as Encodable<K>>::encode_size(&self.entry.key);
         let value_size = <V as Encodable<V>>::encode_size(&self.entry.value);
 
         if key_size > MAX_KEY_SIZE_BYTES || value_size > MAX_VALUE_SIZE_BYTES {
-            return Err(Error::OutOfBound);
+            return Err(SerializationError::OutOfBound);
         }
 
         output.write_u8(OBJECT_ID_ENTRY)?;
@@ -152,15 +155,15 @@ where
         Ok(())
     }
 
-    pub fn read_slice(data: &[u8]) -> Result<(Entry<K, V>, usize), Error> {
+    pub fn read_slice(data: &[u8]) -> Result<(Entry<K, V>, usize), SerializationError> {
         let mut data_cursor = Cursor::new(data);
         Self::read(&mut data_cursor)
     }
 
-    pub fn read(data_cursor: &mut Read) -> Result<(Entry<K, V>, usize), Error> {
+    pub fn read(data_cursor: &mut Read) -> Result<(Entry<K, V>, usize), SerializationError> {
         let item_id = data_cursor.read_u8()?;
         if item_id != OBJECT_ID_ENTRY {
-            return Err(Error::InvalidObjectType);
+            return Err(SerializationError::InvalidObjectType);
         }
 
         let key_size = data_cursor.read_u16::<LittleEndian>()? as usize;
@@ -173,12 +176,12 @@ where
         Ok((Entry { entry }, entry_file_size))
     }
 
-    pub fn read_key(data: &[u8]) -> Result<K, Error> {
+    pub fn read_key(data: &[u8]) -> Result<K, SerializationError> {
         let mut data_cursor = Cursor::new(data);
 
         let item_id = data_cursor.read_u8()?;
         if item_id != OBJECT_ID_ENTRY {
-            return Err(Error::InvalidObjectType);
+            return Err(SerializationError::InvalidObjectType);
         }
 
         let key_size = data_cursor.read_u16::<LittleEndian>()? as usize;
@@ -203,9 +206,12 @@ where
     K: Ord + Encodable<K>,
     V: Encodable<V>,
 {
-    pub fn read(data: &[u8], nb_levels: usize) -> Result<(Object<K, V>, usize), Error> {
+    pub fn read(
+        data: &[u8],
+        nb_levels: usize,
+    ) -> Result<(Object<K, V>, usize), SerializationError> {
         if data.is_empty() {
-            return Err(Error::OutOfBound);
+            return Err(SerializationError::OutOfBound);
         }
 
         if data[0] == OBJECT_ID_CHECKPOINT {
@@ -215,13 +221,13 @@ where
             let (entry, size) = Entry::read_slice(data)?;
             Ok((Object::Entry(entry), size))
         } else {
-            Err(Error::InvalidObjectType)
+            Err(SerializationError::InvalidObjectType)
         }
     }
 }
 
 #[derive(Debug)]
-pub enum Error {
+pub enum SerializationError {
     OutOfBound,
     InvalidFormat,
     InvalidVersion,
@@ -229,9 +235,9 @@ pub enum Error {
     IO(std::io::Error),
 }
 
-impl From<std::io::Error> for Error {
+impl From<std::io::Error> for SerializationError {
     fn from(err: std::io::Error) -> Self {
-        Error::IO(err)
+        SerializationError::IO(err)
     }
 }
 

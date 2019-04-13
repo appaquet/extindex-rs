@@ -1,10 +1,18 @@
 extindex [![crates.io](https://img.shields.io/crates/v/extindex.svg)](https://crates.io/crates/extindex)
 =========
 
-Immutable persisted index (on disk) that can be built in one pass using a sorted iterator, or uses [extsort](https://crates.io/crates/extsort)
-to externally sort the iterator first, and then build the index. The index allow random lookups and sorted scans. 
-An indexed entry consists of a key and a value. The key needs to implement `Eq` and `Ord`, and both the key and values
-need to implement a `Encodable` trait for serialization to and from disk.
+Immutable persisted index (on disk) that can be built in one pass using a sorted iterator, or can
+use [extsort](https://crates.io/crates/extsort) to externally sort the iterator first, and
+then build the index from it.
+
+The index allows random lookups and sorted scans. An indexed entry consists of a key and a value.
+The key needs to implement `Eq` and `Ord`, and both the key and values need to implement a
+`Encodable` trait for serialization to and from disk.
+
+The index is built using a skip list like data structure, but in which lookups are starting from
+the end of the index instead of from the beginning. This allow building the index in a single 
+pass on a sorted iterator, since starting from the beginning would require knowing
+checkpoints/nodes ahead in the file.
 
 # Example
 ```rust
@@ -50,7 +58,6 @@ need to implement a `Encodable` trait for serialization to and from disk.
 ```
 
 # TODO
-- [ ] Add support for scan from key
 - [ ] Possibility to use Bloom filter to prevent hitting the disk when index doesn't have a key
 - [ ] Write an example using Serde serialization
 

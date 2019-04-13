@@ -26,6 +26,15 @@ use crate::{Encodable, Entry};
 const CHECKPOINT_WRITE_UPCOMING_WITHIN_DISTANCE: u64 = 3;
 const LEVELS_MINIMUM_ITEMS: u64 = 2;
 
+///
+/// Index builder that creates a file index from any iterator. If the given iterator is already sorted,
+/// the `build_from_sorted` method can be used, while `build` can take any iterator. The `build` method
+/// will sort the iterator first using external sorting exposed by the `extsort` crate.
+///
+/// As the index is being built, checkpoints / nodes are added to the file. These checkpoints / nodes
+/// are similar to the ones in a skip list, except that they point to previous checkpoints instead of
+/// pointing to next checkpoints.
+///
 pub struct Builder<K, V>
 where
     K: Ord + Encodable<K>,
@@ -42,6 +51,9 @@ where
     K: Ord + Encodable<K>,
     V: Encodable<V>,
 {
+    ///
+    /// Create an index builder that will write to the given file path.
+    ///
     pub fn new(path: PathBuf) -> Builder<K, V> {
         Builder {
             path,
@@ -51,17 +63,36 @@ where
         }
     }
 
+    ///
+    /// Indicate approximately how many items we want per last-level checkpoint. A higher value
+    /// means that once a checkpoint in which we know the item is after is found, we may need to
+    /// iterate through up to `log_base` items. A lower value will prevent creating too many levels
+    /// when the index gets bigger, but will require more scanning through more entries to find the
+    /// right one.
+    ///
+    /// Default value: 5.0
+    ///
     pub fn with_log_base(mut self, log_base: f64) -> Self {
         self.log_base = log_base;
         self
     }
 
+    ///
+    /// When using the `build` method from a non-sorted iterator, this value is passed to the
+    /// `extsort` crate to define how many items will be buffered to memory before being dumped
+    /// to disk.
+    ///
+    /// This number is the actual number of entries, not the sum of their size.
+    ///
     pub fn with_extsort_max_size(mut self, max_size: usize) -> Self {
         self.extsort_max_size = Some(max_size);
         self
     }
 
-    pub fn build<I>(self, iter: I) -> Result<(), Error>
+    ///
+    /// Build the index using a non-sorted iterator.
+    ///
+    pub fn build<I>(self, iter: I) -> Result<(), BuilderError>
     where
         I: Iterator<Item = Entry<K, V>>,
     {
@@ -81,7 +112,10 @@ where
         self.build_from_sorted(sorted_iter, sorted_count)
     }
 
-    pub fn build_from_sorted<I>(self, iter: I, nb_items: u64) -> Result<(), Error>
+    ///
+    /// Build the index using a sorted iterator.
+    ///
+    pub fn build_from_sorted<I>(self, iter: I, nb_items: u64) -> Result<(), BuilderError>
     where
         I: Iterator<Item = Entry<K, V>>,
     {
@@ -96,7 +130,7 @@ where
 
         let mut levels = levels_for_items_count(nb_items, self.log_base);
         if levels.len() > seri::MAX_LEVELS {
-            return Err(Error::MaxSize);
+            return Err(BuilderError::MaxSize);
         }
 
         self.write_header(&mut counted_output, &levels)?;
@@ -144,7 +178,7 @@ where
         Ok(())
     }
 
-    fn write_header(&self, output: &mut Write, levels: &[Level]) -> Result<(), Error> {
+    fn write_header(&self, output: &mut Write, levels: &[Level]) -> Result<(), BuilderError> {
         let seri_header = seri::Header {
             nb_levels: levels.len() as u8,
         };
@@ -152,7 +186,7 @@ where
         Ok(())
     }
 
-    fn write_entry(&self, output: &mut Write, entry: Entry<K, V>) -> Result<(), Error> {
+    fn write_entry(&self, output: &mut Write, entry: Entry<K, V>) -> Result<(), BuilderError> {
         let seri_entry = seri::Entry { entry };
         seri_entry.write(output)?;
         Ok(())
@@ -165,7 +199,7 @@ where
         entry_position: u64,
         levels: &mut [Level],
         force_write: bool,
-    ) -> Result<(), Error> {
+    ) -> Result<(), BuilderError> {
         let seri_levels = levels
             .iter()
             .map(|level| seri::CheckpointLevel {
@@ -221,6 +255,9 @@ fn levels_for_items_count(nb_items: u64, log_base: f64) -> Vec<Level> {
     levels
 }
 
+///
+///
+///
 #[derive(Debug)]
 struct Level {
     id: usize,
@@ -229,23 +266,26 @@ struct Level {
     last_item: Option<u64>,
 }
 
+///
+/// Index building related errors
+///
 #[derive(Debug)]
-pub enum Error {
+pub enum BuilderError {
     MaxSize,
     InvalidItem,
-    Serialization(seri::Error),
+    Serialization(seri::SerializationError),
     IO(std::io::Error),
 }
 
-impl From<std::io::Error> for Error {
+impl From<std::io::Error> for BuilderError {
     fn from(err: std::io::Error) -> Self {
-        Error::IO(err)
+        BuilderError::IO(err)
     }
 }
 
-impl From<seri::Error> for Error {
-    fn from(err: seri::Error) -> Self {
-        Error::Serialization(err)
+impl From<seri::SerializationError> for BuilderError {
+    fn from(err: seri::SerializationError) -> Self {
+        BuilderError::Serialization(err)
     }
 }
 

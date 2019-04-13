@@ -22,7 +22,7 @@ use test::Bencher;
 use extindex::{Builder, Encodable, Entry, Reader};
 
 #[bench]
-fn bench_random_access_10_million(b: &mut Bencher) {
+fn bench_random_access_1_million(b: &mut Bencher) {
     let tempdir = tempdir::TempDir::new("extindex").unwrap();
     let index_file = tempdir.path().join("index.idx");
 
@@ -40,7 +40,7 @@ fn bench_random_access_10_million(b: &mut Bencher) {
 
     b.iter(|| {
         for key in &lookup_keys {
-            let _ = index.find(&key).unwrap();
+            test::black_box(index.find(&key).unwrap());
         }
     })
 }
@@ -63,7 +63,7 @@ impl Encodable<TestString> for TestString {
     }
 
     fn encode(item: &TestString, write: &mut Write) -> Result<(), std::io::Error> {
-        write.write(item.0.as_bytes()).map(|_| ())
+        write.write_all(item.0.as_bytes()).map(|_| ())
     }
 
     fn decode(data: &mut Read, size: usize) -> Result<TestString, std::io::Error> {
