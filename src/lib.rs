@@ -12,11 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Immutable persisted index (on disk) that can be built in one pass using a sorted iterator, or
-//! uses [extsort](https://crates.io/crates/extsort) to externally sort the iterator first, and
-//! then build the index. The index allow random lookups and sorted scans. An indexed entry consists
-//! of a key and a value. The key needs to implement `Eq` and `Ord`, and both the key and values
-//! need to implement a `Encodable` trait for serialization to and from disk.
+//! Immutable persisted index (on disk) that can be built in one pass using a sorted iterator, or can
+//! use [extsort](https://crates.io/crates/extsort) to externally sort the iterator first, and
+//! then build the index from it.
+//!
+//! The index allows random lookups and sorted scans. An indexed entry consists of a key and a value.
+//! The key needs to implement `Eq` and `Ord`, and both the key and values need to implement a
+//! `Encodable` trait for serialization to and from disk.
+//!
+//! The index is built using a skip list like data structure, but in which lookups are starting from
+//! the end of the index instead of from the beginning. This allow building the index in a single
+//! pass on a sorted iterator, since starting from the beginning would require knowing
+//! checkpoints/nodes ahead in the file.
 //!
 //! # Examples
 //! ```rust
@@ -35,7 +42,7 @@
 //!     }
 //!
 //!     fn encode(item: &TestString, write: &mut Write) -> Result<(), std::io::Error> {
-//!         write.write(item.0.as_bytes()).map(|_| ())
+//!         write.write_all(item.0.as_bytes()).map(|_| ())
 //!     }
 //!
 //!     fn decode(data: &mut Read, size: usize) -> Result<TestString, std::io::Error> {
@@ -62,109 +69,20 @@
 #[macro_use]
 extern crate log;
 
-use std::cmp::Ordering;
-use std::io::{Read, Write};
-
-use extsort::Sortable;
-
-pub use crate::builder::Builder;
-pub use crate::reader::Reader;
+pub use crate::builder::{Builder, BuilderError};
+pub use crate::entry::{Encodable, Entry};
+pub use crate::reader::{Reader, ReaderError};
 
 pub mod builder;
+pub mod entry;
 pub mod reader;
 
 mod seri;
 mod utils;
 
-pub trait Encodable<T> {
-    fn encode_size(item: &T) -> usize;
-    fn encode(item: &T, write: &mut Write) -> Result<(), std::io::Error>;
-    fn decode(data: &mut Read, size: usize) -> Result<T, std::io::Error>;
-}
-
-pub struct Entry<K, V>
-where
-    K: Ord + Encodable<K>,
-    V: Encodable<V>,
-{
-    key: K,
-    value: V,
-}
-
-impl<K, V> Entry<K, V>
-where
-    K: Ord + Encodable<K>,
-    V: Encodable<V>,
-{
-    pub fn new(key: K, value: V) -> Entry<K, V> {
-        Entry { key, value }
-    }
-
-    pub fn key(&self) -> &K {
-        &self.key
-    }
-
-    pub fn value(&self) -> &V {
-        &self.value
-    }
-}
-
-impl<K, V> Sortable<Entry<K, V>> for Entry<K, V>
-where
-    K: Ord + Encodable<K>,
-    V: Encodable<V>,
-{
-    fn encode(entry: Entry<K, V>, output: &mut Write) {
-        let seri_entry = seri::Entry { entry };
-        let _ = seri_entry.write(output);
-    }
-
-    fn decode(read: &mut Read) -> Option<Entry<K, V>> {
-        let (entry, _read_size) = seri::Entry::read(read).ok()?;
-        Some(entry.entry)
-    }
-}
-
-impl<K, V> Ord for Entry<K, V>
-where
-    K: Ord + Encodable<K>,
-    V: Encodable<V>,
-{
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.key.cmp(&other.key)
-    }
-}
-
-impl<K, V> PartialOrd for Entry<K, V>
-where
-    K: Ord + Encodable<K>,
-    V: Encodable<V>,
-{
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.key.partial_cmp(&other.key)
-    }
-}
-
-impl<K, V> PartialEq for Entry<K, V>
-where
-    K: Ord + Encodable<K>,
-    V: Encodable<V>,
-{
-    fn eq(&self, other: &Self) -> bool {
-        self.key.eq(&other.key)
-    }
-}
-
-impl<K, V> Eq for Entry<K, V>
-where
-    K: Ord + Encodable<K>,
-    V: Encodable<V>,
-{
-}
-
 #[cfg(test)]
 pub mod tests {
-    use super::*;
+    use std::io::Read;
 
     #[derive(Ord, PartialOrd, Eq, PartialEq, Debug)]
     pub struct TestString(pub String);
@@ -175,7 +93,7 @@ pub mod tests {
         }
 
         fn encode(item: &TestString, write: &mut std::io::Write) -> Result<(), std::io::Error> {
-            write.write(item.0.as_bytes()).map(|_| ())
+            write.write_all(item.0.as_bytes()).map(|_| ())
         }
 
         fn decode(data: &mut Read, size: usize) -> Result<TestString, std::io::Error> {

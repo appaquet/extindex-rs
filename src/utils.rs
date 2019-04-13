@@ -54,7 +54,7 @@ mod tests {
 
         let mut counted = CountedWrite::new(&mut buf);
         assert_eq!(counted.written_count(), 0);
-        counted.write(&[0, 1, 2]).unwrap();
+        counted.write_all(&[0, 1, 2]).unwrap();
         assert_eq!(counted.written_count(), 3);
     }
 
@@ -73,7 +73,8 @@ mod tests {
 
         let mut counted = CountedWrite::new(MockWrite);
         assert_eq!(counted.written_count(), 0);
-        counted.write(&[0, 1, 2]).unwrap();
+        let count = counted.write(&[0, 1, 2]).unwrap();
+        assert_eq!(count, 1);
         assert_eq!(counted.written_count(), 1);
     }
 }
