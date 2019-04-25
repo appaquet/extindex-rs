@@ -10,10 +10,10 @@ use extsort::Sortable;
 ///
 pub trait Encodable<T> {
     ///
-    /// Exact size that the encoded item will have.
-    /// For now, this is a requirement since encoding is not buffered.
+    /// Exact size that the encoded item will have, if known. If none is returned, the encoding
+    /// will be buffered in memory.
     ///
-    fn encode_size(item: &T) -> usize;
+    fn encode_size(item: &T) -> Option<usize>;
 
     ///
     /// Encode the given item to the writer

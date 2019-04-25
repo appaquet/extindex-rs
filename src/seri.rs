@@ -139,8 +139,23 @@ where
     V: Encodable<V>,
 {
     pub fn write(&self, output: &mut Write) -> Result<(), SerializationError> {
-        let key_size = <K as Encodable<K>>::encode_size(&self.entry.key);
-        let value_size = <V as Encodable<V>>::encode_size(&self.entry.value);
+        let (key_size, key_data) = match <K as Encodable<K>>::encode_size(&self.entry.key) {
+            Some(size) => (size, None),
+            None => {
+                let mut buffer = Vec::new();
+                <K as Encodable<K>>::encode(&self.entry.key, &mut buffer)?;
+                (buffer.len(), Some(buffer))
+            }
+        };
+
+        let (value_size, value_data) = match <V as Encodable<V>>::encode_size(&self.entry.value) {
+            Some(size) => (size, None),
+            None => {
+                let mut buffer = Vec::new();
+                <V as Encodable<V>>::encode(&self.entry.value, &mut buffer)?;
+                (buffer.len(), Some(buffer))
+            }
+        };
 
         if key_size > MAX_KEY_SIZE_BYTES || value_size > MAX_VALUE_SIZE_BYTES {
             return Err(SerializationError::OutOfBound);
@@ -149,8 +164,18 @@ where
         output.write_u8(OBJECT_ID_ENTRY)?;
         output.write_u16::<LittleEndian>(key_size as u16)?;
         output.write_u16::<LittleEndian>(value_size as u16)?;
-        <K as Encodable<K>>::encode(&self.entry.key, output)?;
-        <V as Encodable<V>>::encode(&self.entry.value, output)?;
+
+        if let Some(key_data) = key_data {
+            output.write_all(&key_data)?;
+        } else {
+            <K as Encodable<K>>::encode(&self.entry.key, output)?;
+        }
+
+        if let Some(value_data) = value_data {
+            output.write_all(&value_data)?;
+        } else {
+            <V as Encodable<V>>::encode(&self.entry.value, output)?;
+        }
 
         Ok(())
     }
@@ -280,7 +305,7 @@ mod tests {
     }
 
     #[test]
-    fn entry_write_read() {
+    fn known_size_entry_write_read() {
         let mut data = Vec::new();
 
         let entry = Entry {
@@ -302,6 +327,31 @@ mod tests {
             .ok()
             .unwrap();
         assert_eq!(read_entry_key, TestString("key".to_string()));
+    }
+
+    #[test]
+    fn unknown_size_entry_write_read() {
+        let mut data = Vec::new();
+
+        let entry = Entry {
+            entry: CrateEntry {
+                key: UnsizedString("key".to_string()),
+                value: UnsizedString("value".to_string()),
+            },
+        };
+        entry.write(&mut data).ok().unwrap();
+
+        let (read_entry, size) = Entry::<UnsizedString, UnsizedString>::read_slice(&data)
+            .ok()
+            .unwrap();
+        assert_eq!(read_entry.entry.key, UnsizedString("key".to_string()));
+        assert_eq!(read_entry.entry.value, UnsizedString("value".to_string()));
+        assert_eq!(size, data.len());
+
+        let read_entry_key = Entry::<UnsizedString, UnsizedString>::read_key(&data)
+            .ok()
+            .unwrap();
+        assert_eq!(read_entry_key, UnsizedString("key".to_string()));
     }
 
     #[test]
@@ -352,5 +402,24 @@ mod tests {
 
         assert!(Object::<TestString, TestString>::read(&data[chk_size + 1..], 1).is_err());
         assert!(Object::<TestString, TestString>::read(&data[0..0], 1).is_err());
+    }
+
+    #[derive(Ord, PartialOrd, Eq, PartialEq, Debug)]
+    pub struct UnsizedString(pub String);
+
+    impl super::Encodable<UnsizedString> for UnsizedString {
+        fn encode_size(_item: &UnsizedString) -> Option<usize> {
+            None
+        }
+
+        fn encode(item: &UnsizedString, write: &mut std::io::Write) -> Result<(), std::io::Error> {
+            write.write_all(item.0.as_bytes()).map(|_| ())
+        }
+
+        fn decode(data: &mut Read, size: usize) -> Result<UnsizedString, std::io::Error> {
+            let mut bytes = vec![0u8; size];
+            data.read_exact(&mut bytes)?;
+            Ok(UnsizedString(String::from_utf8_lossy(&bytes).to_string()))
+        }
     }
 }
