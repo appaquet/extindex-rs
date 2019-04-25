@@ -26,8 +26,8 @@ checkpoints/nodes ahead in the file.
  struct TestString(String);
 
  impl Encodable<TestString> for TestString {
-     fn encode_size(item: &TestString) -> usize {
-         item.0.as_bytes().len()
+     fn encode_size(item: &TestString) -> Option<usize> {
+         Some(item.0.as_bytes().len())
      }
 
      fn encode(item: &TestString, write: &mut Write) -> Result<(), std::io::Error> {
