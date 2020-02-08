@@ -224,11 +224,11 @@ impl Encodable<TestString> for TestString {
         Some(item.0.as_bytes().len())
     }
 
-    fn encode(item: &TestString, write: &mut Write) -> Result<(), std::io::Error> {
+    fn encode<W: Write>(item: &TestString, write: &mut W) -> Result<(), std::io::Error> {
         write.write(item.0.as_bytes()).map(|_| ())
     }
 
-    fn decode(data: &mut Read, size: usize) -> Result<TestString, std::io::Error> {
+    fn decode<R: Read>(data: &mut R, size: usize) -> Result<TestString, std::io::Error> {
         let mut bytes = vec![0u8; size];
         data.read_exact(&mut bytes)?;
         Ok(TestString(String::from_utf8_lossy(&bytes).to_string()))

@@ -35,7 +35,7 @@ pub struct Header {
 }
 
 impl Header {
-    pub fn write(&self, output: &mut Write) -> Result<(), std::io::Error> {
+    pub fn write<W: Write>(&self, output: &mut W) -> Result<(), std::io::Error> {
         output.write_all(&INDEX_FILE_MAGIC_HEADER)?;
         output.write_all(&[INDEX_FILE_VERSION])?;
         output.write_u8(self.nb_levels)?;
@@ -78,7 +78,7 @@ pub struct CheckpointLevel {
 }
 
 impl Checkpoint {
-    pub fn write(&self, output: &mut Write) -> Result<(), SerializationError> {
+    pub fn write<W: Write>(&self, output: &mut W) -> Result<(), SerializationError> {
         output.write_u8(OBJECT_ID_CHECKPOINT)?;
         output.write_u64::<LittleEndian>(self.entry_position)?;
 
@@ -138,7 +138,7 @@ where
     K: Ord + Encodable<K>,
     V: Encodable<V>,
 {
-    pub fn write(&self, output: &mut Write) -> Result<(), SerializationError> {
+    pub fn write<W: Write>(&self, output: &mut W) -> Result<(), SerializationError> {
         let (key_size, key_data) = match <K as Encodable<K>>::encode_size(&self.entry.key) {
             Some(size) => (size, None),
             None => {
@@ -185,7 +185,7 @@ where
         Self::read(&mut data_cursor)
     }
 
-    pub fn read(data_cursor: &mut Read) -> Result<(Entry<K, V>, usize), SerializationError> {
+    pub fn read<R: Read>(data_cursor: &mut R) -> Result<(Entry<K, V>, usize), SerializationError> {
         let item_id = data_cursor.read_u8()?;
         if item_id != OBJECT_ID_ENTRY {
             return Err(SerializationError::InvalidObjectType);
@@ -412,11 +412,11 @@ mod tests {
             None
         }
 
-        fn encode(item: &UnsizedString, write: &mut std::io::Write) -> Result<(), std::io::Error> {
+        fn encode<W: Write>(item: &UnsizedString, write: &mut W) -> Result<(), std::io::Error> {
             write.write_all(item.0.as_bytes()).map(|_| ())
         }
 
-        fn decode(data: &mut Read, size: usize) -> Result<UnsizedString, std::io::Error> {
+        fn decode<R: Read>(data: &mut R, size: usize) -> Result<UnsizedString, std::io::Error> {
             let mut bytes = vec![0u8; size];
             data.read_exact(&mut bytes)?;
             Ok(UnsizedString(String::from_utf8_lossy(&bytes).to_string()))

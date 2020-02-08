@@ -18,11 +18,11 @@ pub trait Encodable<T> {
     ///
     /// Encode the given item to the writer
     ///
-    fn encode(item: &T, write: &mut Write) -> Result<(), std::io::Error>;
+    fn encode<W: Write>(item: &T, write: &mut W) -> Result<(), std::io::Error>;
 
     /// Decode the given from the reader
     ///
-    fn decode(data: &mut Read, size: usize) -> Result<T, std::io::Error>;
+    fn decode<R: Read>(data: &mut R, size: usize) -> Result<T, std::io::Error>;
 }
 
 ///
@@ -60,12 +60,12 @@ where
     K: Ord + Encodable<K>,
     V: Encodable<V>,
 {
-    fn encode(entry: Entry<K, V>, output: &mut Write) {
+    fn encode<W: Write>(entry: Entry<K, V>, output: &mut W) {
         let seri_entry = seri::Entry { entry };
         let _ = seri_entry.write(output);
     }
 
-    fn decode(read: &mut Read) -> Option<Entry<K, V>> {
+    fn decode<R: Read>(read: &mut R) -> Option<Entry<K, V>> {
         let (entry, _read_size) = seri::Entry::read(read).ok()?;
         Some(entry.entry)
     }

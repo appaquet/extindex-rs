@@ -29,7 +29,7 @@ const LEVELS_MINIMUM_ITEMS: u64 = 2;
 ///
 /// Index builder that creates a file index from any iterator. If the given iterator is already sorted,
 /// the `build_from_sorted` method can be used, while `build` can take any iterator. The `build` method
-/// will sort the iterator first using external sorting exposed by the `extsort` crate.
+/// will sort the iterator first using external sorting using the `extsort` crate.
 ///
 /// As the index is being built, checkpoints / nodes are added to the file. These checkpoints / nodes
 /// are similar to the ones in a skip list, except that they point to previous checkpoints instead of
@@ -178,7 +178,7 @@ where
         Ok(())
     }
 
-    fn write_header(&self, output: &mut Write, levels: &[Level]) -> Result<(), BuilderError> {
+    fn write_header<W: Write>(&self, output: &mut W, levels: &[Level]) -> Result<(), BuilderError> {
         let seri_header = seri::Header {
             nb_levels: levels.len() as u8,
         };
@@ -186,15 +186,19 @@ where
         Ok(())
     }
 
-    fn write_entry(&self, output: &mut Write, entry: Entry<K, V>) -> Result<(), BuilderError> {
+    fn write_entry<W: Write>(
+        &self,
+        output: &mut W,
+        entry: Entry<K, V>,
+    ) -> Result<(), BuilderError> {
         let seri_entry = seri::Entry { entry };
         seri_entry.write(output)?;
         Ok(())
     }
 
-    fn write_checkpoint(
+    fn write_checkpoint<W: Write>(
         &self,
-        output: &mut Write,
+        output: &mut W,
         current_position: u64,
         entry_position: u64,
         levels: &mut [Level],

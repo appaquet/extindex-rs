@@ -123,11 +123,11 @@ impl Encodable<SizedString> for SizedString {
         Some(item.0.as_bytes().len())
     }
 
-    fn encode(item: &SizedString, write: &mut Write) -> Result<(), std::io::Error> {
+    fn encode<W: Write>(item: &SizedString, write: &mut W) -> Result<(), std::io::Error> {
         write.write_all(item.0.as_bytes()).map(|_| ())
     }
 
-    fn decode(data: &mut Read, size: usize) -> Result<SizedString, std::io::Error> {
+    fn decode<R: Read>(data: &mut R, size: usize) -> Result<SizedString, std::io::Error> {
         let mut bytes = vec![0u8; size];
         data.read_exact(&mut bytes)?;
         Ok(SizedString(String::from_utf8_lossy(&bytes).to_string()))
@@ -142,11 +142,11 @@ impl Encodable<UnsizedString> for UnsizedString {
         None
     }
 
-    fn encode(item: &UnsizedString, write: &mut std::io::Write) -> Result<(), std::io::Error> {
+    fn encode<W: Write>(item: &UnsizedString, write: &mut W) -> Result<(), std::io::Error> {
         write.write_all(item.0.as_bytes()).map(|_| ())
     }
 
-    fn decode(data: &mut Read, size: usize) -> Result<UnsizedString, std::io::Error> {
+    fn decode<R: Read>(data: &mut R, size: usize) -> Result<UnsizedString, std::io::Error> {
         let mut bytes = vec![0u8; size];
         data.read_exact(&mut bytes)?;
         Ok(UnsizedString(String::from_utf8_lossy(&bytes).to_string()))

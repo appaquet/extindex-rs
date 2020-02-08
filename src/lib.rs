@@ -41,11 +41,11 @@
 //!         Some(item.0.as_bytes().len())
 //!     }
 //!
-//!     fn encode(item: &TestString, write: &mut Write) -> Result<(), std::io::Error> {
+//!     fn encode<W: Write>(item: &TestString, write: &mut W) -> Result<(), std::io::Error> {
 //!         write.write_all(item.0.as_bytes()).map(|_| ())
 //!     }
 //!
-//!     fn decode(data: &mut Read, size: usize) -> Result<TestString, std::io::Error> {
+//!     fn decode<R: Read>(data: &mut R, size: usize) -> Result<TestString, std::io::Error> {
 //!         let mut bytes = vec![0u8; size];
 //!         data.read_exact(&mut bytes)?;
 //!         Ok(TestString(String::from_utf8_lossy(&bytes).to_string()))
@@ -82,7 +82,7 @@ mod utils;
 
 #[cfg(test)]
 pub mod tests {
-    use std::io::Read;
+    use std::io::{Read, Write};
 
     #[derive(Ord, PartialOrd, Eq, PartialEq, Debug)]
     pub struct TestString(pub String);
@@ -92,11 +92,11 @@ pub mod tests {
             Some(item.0.as_bytes().len())
         }
 
-        fn encode(item: &TestString, write: &mut std::io::Write) -> Result<(), std::io::Error> {
+        fn encode<W: Write>(item: &TestString, write: &mut W) -> Result<(), std::io::Error> {
             write.write_all(item.0.as_bytes()).map(|_| ())
         }
 
-        fn decode(data: &mut Read, size: usize) -> Result<TestString, std::io::Error> {
+        fn decode<R: Read>(data: &mut R, size: usize) -> Result<TestString, std::io::Error> {
             let mut bytes = vec![0u8; size];
             data.read_exact(&mut bytes)?;
             Ok(TestString(String::from_utf8_lossy(&bytes).to_string()))
