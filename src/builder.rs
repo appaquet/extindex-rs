@@ -53,9 +53,9 @@ where
     ///
     /// Create an index builder that will write to the given file path.
     ///
-    pub fn new(path: PathBuf) -> Builder<K, V> {
+    pub fn new<P: Into<PathBuf>>(path: P) -> Builder<K, V> {
         Builder {
-            path,
+            path: path.into(),
             log_base: 5.0,
             extsort_max_size: None,
             phantom: std::marker::PhantomData,
@@ -335,13 +335,13 @@ mod tests {
             ));
         }
 
-        let tempdir = tempdir::TempDir::new("extindex").unwrap();
-        let index_path = tempdir.path().join("index.idx");
-        let builder = Builder::<TestString, TestString>::new(index_path.clone());
+        let index_file = tempfile::NamedTempFile::new().unwrap();
+        let index_file = index_file.path();
+        let builder = Builder::<TestString, TestString>::new(index_file);
 
         builder.build(data.into_iter()).unwrap();
 
-        let file_meta = std::fs::metadata(&index_path).unwrap();
+        let file_meta = std::fs::metadata(index_file).unwrap();
         assert!(file_meta.len() > 10);
     }
 }

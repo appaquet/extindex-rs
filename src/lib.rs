@@ -28,7 +28,6 @@
 //! # Examples
 //! ```rust
 //! extern crate extindex;
-//! extern crate tempdir;
 //!
 //! use std::io::{Read, Write};
 //! use extindex::{Builder, Encodable, Entry, Reader};
@@ -52,16 +51,15 @@
 //!     }
 //! }
 //!
-//! let tempdir = tempdir::TempDir::new("extindex").unwrap();
-//! let index_file = tempdir.path().join("index.idx");
+//! let index_file = tempfile::NamedTempFile::new().unwrap();
 //!
-//! let builder = Builder::new(index_file.clone());
+//! let builder = Builder::new(index_file.path());
 //! let entries = vec![
 //!    Entry::new(TestString("mykey".to_string()), TestString("my value".to_string()))
 //! ];
 //! builder.build(entries.into_iter()).unwrap();
 //!
-//! let reader = Reader::<TestString, TestString>::open(&index_file).unwrap();
+//! let reader = Reader::<TestString, TestString>::open(index_file).unwrap();
 //! assert!(reader.find(&TestString("mykey".to_string())).unwrap().is_some());
 //! assert!(reader.find(&TestString("notfound".to_string())).unwrap().is_none());
 //! ```

@@ -16,7 +16,6 @@
 extern crate test;
 
 use std::io::{Read, Write};
-use tempdir;
 use test::Bencher;
 
 use extindex::{Builder, Encodable, Entry, Reader};
@@ -24,20 +23,20 @@ use extindex::{Builder, Encodable, Entry, Reader};
 #[bench]
 fn bench_build_100_000_known_size(b: &mut Bencher) {
     b.iter(|| {
-        let tempdir = tempdir::TempDir::new("extindex").unwrap();
-        let index_file = tempdir.path().join("index.idx");
+        let index_file = tempfile::NamedTempFile::new().unwrap();
+        let index_file = index_file.path();
 
-        let builder = Builder::new(index_file.clone());
+        let builder = Builder::new(index_file);
         builder.build(create_known_size_entries(100_000)).unwrap();
     })
 }
 
 #[bench]
 fn bench_random_access_1_million_known_size(b: &mut Bencher) {
-    let tempdir = tempdir::TempDir::new("extindex").unwrap();
-    let index_file = tempdir.path().join("index.idx");
+    let index_file = tempfile::NamedTempFile::new().unwrap();
+    let index_file = index_file.path();
 
-    let builder = Builder::new(index_file.clone()).with_extsort_max_size(200_000);
+    let builder = Builder::new(index_file).with_extsort_max_size(200_000);
     builder.build(create_known_size_entries(1_000_000)).unwrap();
 
     let index = Reader::<SizedString, SizedString>::open(&index_file).unwrap();
@@ -70,20 +69,20 @@ fn create_known_size_entries(
 #[bench]
 fn bench_build_100_000_unknown_size(b: &mut Bencher) {
     b.iter(|| {
-        let tempdir = tempdir::TempDir::new("extindex").unwrap();
-        let index_file = tempdir.path().join("index.idx");
+        let index_file = tempfile::NamedTempFile::new().unwrap();
+        let index_file = index_file.path();
 
-        let builder = Builder::new(index_file.clone());
+        let builder = Builder::new(index_file);
         builder.build(create_unknown_size_entries(100_000)).unwrap();
     })
 }
 
 #[bench]
 fn bench_random_access_1_million_unknown_size(b: &mut Bencher) {
-    let tempdir = tempdir::TempDir::new("extindex").unwrap();
-    let index_file = tempdir.path().join("index.idx");
+    let index_file = tempfile::NamedTempFile::new().unwrap();
+    let index_file = index_file.path();
 
-    let builder = Builder::new(index_file.clone()).with_extsort_max_size(200_000);
+    let builder = Builder::new(index_file).with_extsort_max_size(200_000);
     builder
         .build(create_unknown_size_entries(1_000_000))
         .unwrap();

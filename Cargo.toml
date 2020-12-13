@@ -16,7 +16,7 @@ log = "0.4"
 memmap = "0.7"
 
 [dev-dependencies]
-tempdir = "0.3"
+tempfile = "3.1"
 skeptic = "0.13"
 
 [build-dependencies]
