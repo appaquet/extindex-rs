@@ -12,12 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std;
-use std::fs::File;
-use std::path::Path;
+use std::{fs::File, path::Path};
 
-use crate::seri;
-use crate::{Encodable, Entry};
+use crate::{seri, Encodable, Entry};
 
 ///
 /// Index reader
@@ -234,9 +231,7 @@ where
         needle: &K,
     ) -> Option<FileEntry<K, V>> {
         self.iterate_entries_from_position(from_position)
-            .skip_while(|read_entry| read_entry.entry.key < *needle)
-            .next()
-            .filter(|read_entry| read_entry.entry.key == *needle)
+            .find(|read_entry| read_entry.entry.key == *needle)
     }
 }
 

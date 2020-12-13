@@ -14,17 +14,15 @@
 
 use extindex::{Builder, Encodable, Entry, Reader};
 use std::io::{Read, Write};
-use tempdir;
 
 #[test]
 fn build_and_read_unique_key() {
-    let tempdir = tempdir::TempDir::new("extindex").unwrap();
-    let index_file = tempdir.path().join("index.idx");
+    let index_file = tempfile::NamedTempFile::new().unwrap();
 
-    let builder = Builder::new(index_file.clone());
+    let builder = Builder::new(index_file.path());
     builder.build(create_entries(1_000, "")).unwrap();
 
-    let reader = Reader::<TestString, TestString>::open(&index_file).unwrap();
+    let reader = Reader::<TestString, TestString>::open(index_file.path()).unwrap();
     assert!(find_entry(&reader, "aaaa").is_none());
     assert!(find_entry(&reader, "key:-1").is_none());
     assert!(find_entry(&reader, "key:0").is_some());
@@ -39,10 +37,9 @@ fn build_and_read_unique_key() {
 
 #[test]
 fn build_and_read_duplicate_key() {
-    let tempdir = tempdir::TempDir::new("extindex").unwrap();
-    let index_file = tempdir.path().join("index.idx");
+    let index_file = tempfile::NamedTempFile::new().unwrap();
 
-    let builder = Builder::new(index_file.clone());
+    let builder = Builder::new(index_file.path());
     let entries = vec![
         build_entry_ref("key:0", "val:0_0"),
         build_entry_ref("key:0", "val:0_1"),
@@ -56,7 +53,7 @@ fn build_and_read_duplicate_key() {
     ];
     builder.build(entries.into_iter()).unwrap();
 
-    let reader = Reader::<TestString, TestString>::open(&index_file).unwrap();
+    let reader = Reader::<TestString, TestString>::open(index_file.path()).unwrap();
 
     assert_eq!(
         find_first_entry(&reader, "key:0"),
@@ -97,13 +94,12 @@ fn build_and_read_duplicate_key() {
 
 #[test]
 fn empty_index() {
-    let tempdir = tempdir::TempDir::new("extindex").unwrap();
-    let index_file = tempdir.path().join("index.idx");
+    let index_file = tempfile::NamedTempFile::new().unwrap();
 
-    let builder = Builder::new(index_file.clone());
+    let builder = Builder::new(index_file.path());
     builder.build(create_entries(0, "")).unwrap();
 
-    match Reader::<TestString, TestString>::open(&index_file).err() {
+    match Reader::<TestString, TestString>::open(index_file.path()).err() {
         Some(extindex::reader::ReaderError::Empty) => {}
         _ => panic!("Unexpected return"),
     }
@@ -111,15 +107,14 @@ fn empty_index() {
 
 #[test]
 fn fuzz_build_read_1_to_650_items() {
-    let tempdir = tempdir::TempDir::new("extindex").unwrap();
-    let index_file = tempdir.path().join("index.idx");
+    let index_file = tempfile::NamedTempFile::new().unwrap();
 
     // Test up to 4 levels (log5(650) = 4)
     for nb_entries in (1..=650).step_by(13) {
-        let builder = Builder::new(index_file.clone());
+        let builder = Builder::new(index_file.path());
         builder.build(create_entries(nb_entries, "")).unwrap();
 
-        let index = Reader::<TestString, TestString>::open(&index_file).unwrap();
+        let index = Reader::<TestString, TestString>::open(index_file.path()).unwrap();
         for i in 0..nb_entries {
             index
                 .find(&TestString(format!("key:{}", i)))
@@ -136,13 +131,12 @@ fn fuzz_build_read_1_to_650_items() {
 
 #[test]
 fn extsort_build_and_read() {
-    let tempdir = tempdir::TempDir::new("extindex").unwrap();
-    let index_file = tempdir.path().join("index.idx");
+    let index_file = tempfile::NamedTempFile::new().unwrap();
 
-    let builder = Builder::new(index_file.clone()).with_extsort_max_size(50_000);
+    let builder = Builder::new(index_file.path()).with_extsort_max_size(50_000);
     builder.build(create_entries(100_000, "")).unwrap();
 
-    let reader = Reader::<TestString, TestString>::open(&index_file).unwrap();
+    let reader = Reader::<TestString, TestString>::open(index_file.path()).unwrap();
     assert!(find_entry(&reader, "aaaa").is_none());
     assert!(find_entry(&reader, "key:0").is_some());
     assert!(find_entry(&reader, "key:1").is_some());
@@ -154,9 +148,9 @@ fn extsort_build_and_read() {
 
 #[test]
 fn reader_iter_unique_key() {
-    let tempdir = tempdir::TempDir::new("extindex").unwrap();
-    let index_file = tempdir.path().join("index.idx");
-    let builder = Builder::new(index_file.clone());
+    let index_file = tempfile::NamedTempFile::new().unwrap();
+
+    let builder = Builder::new(index_file.path());
     builder.build(create_entries(1_000, "")).unwrap();
 
     // extract keys and sort in alphanumerical order
@@ -165,7 +159,7 @@ fn reader_iter_unique_key() {
         .collect();
     expected_keys.sort();
 
-    let reader = Reader::<TestString, TestString>::open(&index_file).unwrap();
+    let reader = Reader::<TestString, TestString>::open(index_file.path()).unwrap();
     for (found_item, expected_key) in reader.iter().zip(expected_keys) {
         assert_eq!(found_item.key().0, expected_key);
     }
