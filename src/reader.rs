@@ -25,7 +25,7 @@ where
     V: Encodable<V>,
 {
     _file: File,
-    data: memmap::Mmap,
+    data: memmap2::Mmap,
     nb_levels: usize,
     last_checkpoint_position: usize,
     phantom: std::marker::PhantomData<(K, V)>,
@@ -56,7 +56,7 @@ where
         }
 
         let file = File::open(path.as_ref())?;
-        let file_mmap = unsafe { memmap::MmapOptions::new().map(&file)? };
+        let file_mmap = unsafe { memmap2::MmapOptions::new().map(&file)? };
 
         let (seri_header, _header_size) = seri::Header::read_slice(&file_mmap[..])?;
         let nb_levels = seri_header.nb_levels as usize;
