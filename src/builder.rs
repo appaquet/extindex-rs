@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std;
 use std::fs::OpenOptions;
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
@@ -295,8 +294,6 @@ impl From<seri::SerializationError> for BuilderError {
 
 #[cfg(test)]
 mod tests {
-    use tempdir;
-
     use super::*;
     use crate::tests::TestString;
 

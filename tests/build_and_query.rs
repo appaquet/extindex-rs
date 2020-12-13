@@ -14,7 +14,6 @@
 
 use extindex::{Builder, Encodable, Entry, Reader};
 use std::io::{Read, Write};
-use tempdir;
 
 #[test]
 fn build_and_read_unique_key() {
