@@ -207,7 +207,6 @@ fn key_ref(key: &str) -> TestString {
     TestString(key.to_string())
 }
 
-///
 /// String wrapper to be encodable
 #[derive(Ord, PartialOrd, Eq, PartialEq, Debug)]
 struct TestString(String);
