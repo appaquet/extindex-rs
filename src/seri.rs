@@ -98,7 +98,8 @@ impl Checkpoint {
             return Err(SerializationError::InvalidObjectType);
         }
 
-        // TODO: Test performance of this heap alloc vs hard coding max size vec on stack
+        // TODO: Test performance of this heap alloc vs hard coding max size vec on
+        // stack
         let entry_position = checkpoint_cursor.read_u64::<LittleEndian>()?;
         let mut levels = Vec::with_capacity(nb_levels);
         for _i in 0..nb_levels {
@@ -141,7 +142,7 @@ where
         entry: &CrateEntry<K, V>,
         output: &mut W,
     ) -> Result<(), SerializationError> {
-        let (key_size, key_data) = match entry.key.encode_size() {
+        let (key_size, key_data) = match entry.key.encoded_size() {
             Some(size) => (size, None),
             None => {
                 let mut buffer = Vec::new();
@@ -150,7 +151,7 @@ where
             }
         };
 
-        let (value_size, value_data) = match entry.value.encode_size() {
+        let (value_size, value_data) = match entry.value.encoded_size() {
             Some(size) => (size, None),
             None => {
                 let mut buffer = Vec::new();
@@ -410,7 +411,7 @@ mod tests {
     pub struct UnsizedString(pub String);
 
     impl super::Encodable for UnsizedString {
-        fn encode_size(&self) -> Option<usize> {
+        fn encoded_size(&self) -> Option<usize> {
             None
         }
 

@@ -25,15 +25,15 @@ use crate::{seri, utils::CountedWrite, Encodable, Entry};
 const CHECKPOINT_WRITE_UPCOMING_WITHIN_DISTANCE: u64 = 3;
 const LEVELS_MINIMUM_ITEMS: u64 = 2;
 
+/// Index builder that creates a file index from any iterator. If the given
+/// iterator is already sorted, the `build_from_sorted` method can be used,
+/// while `build` can take any iterator. The `build` method will sort the
+/// iterator first using external sorting using the `extsort` crate.
 ///
-/// Index builder that creates a file index from any iterator. If the given iterator is already sorted,
-/// the `build_from_sorted` method can be used, while `build` can take any iterator. The `build` method
-/// will sort the iterator first using external sorting using the `extsort` crate.
-///
-/// As the index is being built, checkpoints / nodes are added to the file. These checkpoints / nodes
-/// are similar to the ones in a skip list, except that they point to previous checkpoints instead of
-/// pointing to next checkpoints.
-///
+/// As the index is being built, checkpoints / nodes are added to the file.
+/// These checkpoints / nodes are similar to the ones in a skip list, except
+/// that they point to previous checkpoints instead of pointing to next
+/// checkpoints.
 pub struct Builder<K, V>
 where
     K: Ord + Encodable,
@@ -50,9 +50,7 @@ where
     K: Ord + Encodable,
     V: Encodable,
 {
-    ///
-    /// Create an index builder that will write to the given file path.
-    ///
+    /// Creates an index builder that will write to the given file path.
     pub fn new<P: Into<PathBuf>>(path: P) -> Builder<K, V> {
         Builder {
             path: path.into(),
@@ -62,23 +60,23 @@ where
         }
     }
 
+    /// Indicates approximate number of items we want per last-level checkpoint.
     ///
-    /// Indicate approximately how many items we want per last-level checkpoint. A higher value
-    /// means that once a checkpoint in which we know the item is after is found, we may need to
-    /// iterate through up to `log_base` items. A lower value will prevent creating too many levels
-    /// when the index gets bigger, but will require more scanning through more entries to find the
-    /// right one.
+    /// A higher value means that once a checkpoint in which we know the
+    /// item is after is found, we may need to iterate through up to
+    /// `log_base` items. A lower value will prevent creating too many levels
+    /// when the index gets bigger, but will require more scanning through more
+    /// entries to find the right one.
     ///
     /// Default value: 5.0
-    ///
     pub fn with_log_base(mut self, log_base: f64) -> Self {
         self.log_base = log_base;
         self
     }
 
-    /// When using the `build` method from a non-sorted iterator, this value is passed to the
-    /// `extsort` crate to define how many items will be buffered to memory before being flushed
-    /// to disk.
+    /// When using the `build` method from a non-sorted iterator, this value is
+    /// passed to the `extsort` crate to define how many items will be buffered
+    /// to memory before being flushed to disk.
     ///
     /// This number is the actual number of entries, not the sum of their size.
     pub fn with_extsort_segment_size(mut self, max_size: usize) -> Self {
@@ -86,9 +84,7 @@ where
         self
     }
 
-    ///
-    /// Build the index using a non-sorted iterator.
-    ///
+    /// Builds the index using a non-sorted iterator.
     pub fn build<I>(self, iter: I) -> Result<(), BuilderError>
     where
         I: Iterator<Item = Entry<K, V>>,
@@ -108,9 +104,7 @@ where
         self.build_from_sorted(sorted_iter, sorted_count)
     }
 
-    ///
-    /// Build the index using a sorted iterator.
-    ///
+    /// Builds the index using a sorted iterator.
     pub fn build_from_sorted<I>(self, iter: I, nb_items: u64) -> Result<(), BuilderError>
     where
         I: Iterator<Item = Entry<K, V>>,
@@ -254,9 +248,7 @@ fn levels_for_items_count(nb_items: u64, log_base: f64) -> Vec<Level> {
     levels
 }
 
-///
-///
-///
+/// Represent a level of the skip list index.
 #[derive(Debug)]
 struct Level {
     id: usize,
@@ -265,9 +257,7 @@ struct Level {
     last_item: Option<u64>,
 }
 
-///
-/// Index building related errors
-///
+/// Index building related errors.
 #[derive(Debug)]
 pub enum BuilderError {
     MaxSize,

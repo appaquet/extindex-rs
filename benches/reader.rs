@@ -118,7 +118,7 @@ fn create_unknown_size_entries(
 struct SizedString(String);
 
 impl Encodable for SizedString {
-    fn encode_size(&self) -> Option<usize> {
+    fn encoded_size(&self) -> Option<usize> {
         Some(self.0.as_bytes().len())
     }
 
@@ -137,7 +137,7 @@ impl Encodable for SizedString {
 pub struct UnsizedString(pub String);
 
 impl Encodable for UnsizedString {
-    fn encode_size(&self) -> Option<usize> {
+    fn encoded_size(&self) -> Option<usize> {
         None
     }
 

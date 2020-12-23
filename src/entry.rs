@@ -6,12 +6,12 @@ use std::{
 use crate::seri;
 use extsort::Sortable;
 
-/// Trait representing a structure that can be encoded / serialized to a Writer and decoded / deserialized
-/// from a Reader.
+/// Trait representing a structure that can be encoded / serialized to a Writer
+/// and decoded / deserialized from a Reader.
 pub trait Encodable: Send + Sized {
-    /// Exact size that the encoded item will have, if known. If none is returned, the encoding
-    /// will be buffered in memory.
-    fn encode_size(&self) -> Option<usize>;
+    /// Exact size that the encoded item will have, if known. If none is
+    /// returned, the encoding will be buffered in memory.
+    fn encoded_size(&self) -> Option<usize>;
 
     /// Encodes the given item to the writer
     fn encode<W: Write>(&self, write: &mut W) -> Result<(), std::io::Error>;

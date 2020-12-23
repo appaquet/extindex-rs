@@ -27,7 +27,7 @@ use extindex::{Builder, Encodable, Entry, Reader};
 struct TestString(String);
 
 impl Encodable for TestString {
-    fn encode_size(&self) -> Option<usize> {
+    fn encoded_size(&self) -> Option<usize> {
         Some(self.0.as_bytes().len())
     }
 

@@ -12,17 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Immutable persisted index (on disk) that can be built in one pass using a sorted iterator, or can
-//! use [extsort](https://crates.io/crates/extsort) to externally sort the iterator first, and
+//! Immutable persisted index (on disk) that can be built in one pass using a
+//! sorted iterator, or can use [extsort](https://crates.io/crates/extsort) to externally sort the iterator first, and
 //! then build the index from it.
 //!
-//! The index allows random lookups and sorted scans. An indexed entry consists of a key and a value.
-//! The key needs to implement `Eq` and `Ord`, and both the key and values need to implement a
-//! `Encodable` trait for serialization to and from disk.
+//! The index allows random lookups and sorted scans. An indexed entry consists
+//! of a key and a value. The key needs to implement `Eq` and `Ord`, and both
+//! the key and values need to implement a `Encodable` trait for serialization
+//! to and from disk.
 //!
-//! The index is built using a skip list like data structure, but in which lookups are starting from
-//! the end of the index instead of from the beginning. This allow building the index in a single
-//! pass on a sorted iterator, since starting from the beginning would require knowing
+//! The index is built using a skip list like data structure, but in which
+//! lookups are starting from the end of the index instead of from the
+//! beginning. This allow building the index in a single pass on a sorted
+//! iterator, since starting from the beginning would require knowing
 //! checkpoints/nodes ahead in the file.
 //!
 //! # Examples
@@ -36,7 +38,7 @@
 //! struct TestString(String);
 //!
 //! impl Encodable for TestString {
-//!     fn encode_size(&self) -> Option<usize> {
+//!     fn encoded_size(&self) -> Option<usize> {
 //!         Some(self.0.as_bytes().len())
 //!     }
 //!
@@ -88,7 +90,7 @@ pub mod tests {
     pub struct TestString(pub String);
 
     impl super::Encodable for TestString {
-        fn encode_size(&self) -> Option<usize> {
+        fn encoded_size(&self) -> Option<usize> {
             Some(self.0.as_bytes().len())
         }
 

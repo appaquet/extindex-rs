@@ -209,12 +209,11 @@ fn key_ref(key: &str) -> TestString {
 
 ///
 /// String wrapper to be encodable
-///
 #[derive(Ord, PartialOrd, Eq, PartialEq, Debug)]
 struct TestString(String);
 
 impl Encodable for TestString {
-    fn encode_size(&self) -> Option<usize> {
+    fn encoded_size(&self) -> Option<usize> {
         Some(self.0.as_bytes().len())
     }
 
