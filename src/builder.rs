@@ -12,15 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::fs::OpenOptions;
-use std::io::{BufWriter, Write};
-use std::path::PathBuf;
+use std::{
+    fs::OpenOptions,
+    io::{BufWriter, Write},
+    path::PathBuf,
+};
 
 use extsort::ExternalSorter;
 
-use crate::seri;
-use crate::utils::CountedWrite;
-use crate::{Encodable, Entry};
+use crate::{seri, utils::CountedWrite, Encodable, Entry};
 
 const CHECKPOINT_WRITE_UPCOMING_WITHIN_DISTANCE: u64 = 3;
 const LEVELS_MINIMUM_ITEMS: u64 = 2;
@@ -36,19 +36,19 @@ const LEVELS_MINIMUM_ITEMS: u64 = 2;
 ///
 pub struct Builder<K, V>
 where
-    K: Ord + Encodable<K>,
-    V: Encodable<V>,
+    K: Ord + Encodable,
+    V: Encodable,
 {
     path: PathBuf,
     log_base: f64,
-    extsort_max_size: Option<usize>,
+    extsort_segment_size: Option<usize>,
     phantom: std::marker::PhantomData<(K, V)>,
 }
 
 impl<K, V> Builder<K, V>
 where
-    K: Ord + Encodable<K>,
-    V: Encodable<V>,
+    K: Ord + Encodable,
+    V: Encodable,
 {
     ///
     /// Create an index builder that will write to the given file path.
@@ -57,7 +57,7 @@ where
         Builder {
             path: path.into(),
             log_base: 5.0,
-            extsort_max_size: None,
+            extsort_segment_size: None,
             phantom: std::marker::PhantomData,
         }
     }
@@ -76,15 +76,13 @@ where
         self
     }
 
-    ///
     /// When using the `build` method from a non-sorted iterator, this value is passed to the
-    /// `extsort` crate to define how many items will be buffered to memory before being dumped
+    /// `extsort` crate to define how many items will be buffered to memory before being flushed
     /// to disk.
     ///
     /// This number is the actual number of entries, not the sum of their size.
-    ///
-    pub fn with_extsort_max_size(mut self, max_size: usize) -> Self {
-        self.extsort_max_size = Some(max_size);
+    pub fn with_extsort_segment_size(mut self, max_size: usize) -> Self {
+        self.extsort_segment_size = Some(max_size);
         self
     }
 
@@ -98,11 +96,10 @@ where
         let sort_dir = self.path.with_extension("tmp_sort");
         std::fs::create_dir_all(&sort_dir)?;
 
-        let mut sorter = ExternalSorter::new();
-        sorter.set_sort_dir(sort_dir);
+        let mut sorter = ExternalSorter::new().with_sort_dir(sort_dir);
 
-        if let Some(max_size) = self.extsort_max_size {
-            sorter.set_max_size(max_size);
+        if let Some(segment_size) = self.extsort_segment_size {
+            sorter = sorter.with_segment_size(segment_size);
         }
 
         let sorted_iter = sorter.sort(iter)?;
@@ -142,7 +139,7 @@ where
             let mut last_entry_position: u64 = 0;
             for entry in iter {
                 last_entry_position = counted_output.written_count();
-                self.write_entry(&mut counted_output, entry)?;
+                self.write_entry(&mut counted_output, &entry)?;
                 entries_since_last_checkpoint += 1;
 
                 if entries_since_last_checkpoint >= checkpoint_interval {
@@ -188,10 +185,9 @@ where
     fn write_entry<W: Write>(
         &self,
         output: &mut W,
-        entry: Entry<K, V>,
+        entry: &Entry<K, V>,
     ) -> Result<(), BuilderError> {
-        let seri_entry = seri::Entry { entry };
-        seri_entry.write(output)?;
+        seri::Entry::write(&entry, output)?;
         Ok(())
     }
 

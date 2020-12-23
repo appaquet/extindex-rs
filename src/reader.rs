@@ -21,8 +21,8 @@ use crate::{seri, Encodable, Entry};
 ///
 pub struct Reader<K, V>
 where
-    K: Ord + Encodable<K>,
-    V: Encodable<V>,
+    K: Ord + Encodable,
+    V: Encodable,
 {
     _file: File,
     data: memmap2::Mmap,
@@ -33,8 +33,8 @@ where
 
 impl<K, V> Reader<K, V>
 where
-    K: Ord + Encodable<K>,
-    V: Encodable<V>,
+    K: Ord + Encodable,
+    V: Encodable,
 {
     ///
     /// Open an index file built using the Builder at the given path.
@@ -240,8 +240,8 @@ where
 ///
 struct FileEntryIterator<'reader, K, V>
 where
-    K: Ord + Encodable<K>,
-    V: Encodable<V>,
+    K: Ord + Encodable,
+    V: Encodable,
 {
     reader: &'reader Reader<K, V>,
     current_position: usize,
@@ -249,8 +249,8 @@ where
 
 impl<'reader, K, V> Iterator for FileEntryIterator<'reader, K, V>
 where
-    K: Ord + Encodable<K>,
-    V: Encodable<V>,
+    K: Ord + Encodable,
+    V: Encodable,
 {
     type Item = FileEntry<K, V>;
 
@@ -282,8 +282,8 @@ where
 ///
 struct FileEntry<K, V>
 where
-    K: Ord + Encodable<K>,
-    V: Encodable<V>,
+    K: Ord + Encodable,
+    V: Encodable,
 {
     entry: Entry<K, V>,
     position: usize,
@@ -319,7 +319,7 @@ impl From<std::io::Error> for ReaderError {
 ///
 struct Checkpoint<K>
 where
-    K: Ord + Encodable<K>,
+    K: Ord + Encodable,
 {
     entry_key: K,
     entry_file_position: usize,
@@ -328,7 +328,7 @@ where
 
 struct FindCheckpoint<K>
 where
-    K: Ord + Encodable<K>,
+    K: Ord + Encodable,
 {
     checkpoint: Checkpoint<K>,
     level: usize,

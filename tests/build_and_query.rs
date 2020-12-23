@@ -133,7 +133,7 @@ fn fuzz_build_read_1_to_650_items() {
 fn extsort_build_and_read() {
     let index_file = tempfile::NamedTempFile::new().unwrap();
 
-    let builder = Builder::new(index_file.path()).with_extsort_max_size(50_000);
+    let builder = Builder::new(index_file.path()).with_extsort_segment_size(50_000);
     builder.build(create_entries(100_000, "")).unwrap();
 
     let reader = Reader::<TestString, TestString>::open(index_file.path()).unwrap();
@@ -213,13 +213,13 @@ fn key_ref(key: &str) -> TestString {
 #[derive(Ord, PartialOrd, Eq, PartialEq, Debug)]
 struct TestString(String);
 
-impl Encodable<TestString> for TestString {
-    fn encode_size(item: &TestString) -> Option<usize> {
-        Some(item.0.as_bytes().len())
+impl Encodable for TestString {
+    fn encode_size(&self) -> Option<usize> {
+        Some(self.0.as_bytes().len())
     }
 
-    fn encode<W: Write>(item: &TestString, write: &mut W) -> Result<(), std::io::Error> {
-        write.write(item.0.as_bytes()).map(|_| ())
+    fn encode<W: Write>(&self, write: &mut W) -> Result<(), std::io::Error> {
+        write.write(self.0.as_bytes()).map(|_| ())
     }
 
     fn decode<R: Read>(data: &mut R, size: usize) -> Result<TestString, std::io::Error> {

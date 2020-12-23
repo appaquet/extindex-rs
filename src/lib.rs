@@ -35,13 +35,13 @@
 //! #[derive(Ord, PartialOrd, Eq, PartialEq, Debug)]
 //! struct TestString(String);
 //!
-//! impl Encodable<TestString> for TestString {
-//!     fn encode_size(item: &TestString) -> Option<usize> {
-//!         Some(item.0.as_bytes().len())
+//! impl Encodable for TestString {
+//!     fn encode_size(&self) -> Option<usize> {
+//!         Some(self.0.as_bytes().len())
 //!     }
 //!
-//!     fn encode<W: Write>(item: &TestString, write: &mut W) -> Result<(), std::io::Error> {
-//!         write.write_all(item.0.as_bytes()).map(|_| ())
+//!     fn encode<W: Write>(&self, write: &mut W) -> Result<(), std::io::Error> {
+//!         write.write_all(self.0.as_bytes()).map(|_| ())
 //!     }
 //!
 //!     fn decode<R: Read>(data: &mut R, size: usize) -> Result<TestString, std::io::Error> {
@@ -67,9 +67,11 @@
 #[macro_use]
 extern crate log;
 
-pub use crate::builder::{Builder, BuilderError};
-pub use crate::entry::{Encodable, Entry};
-pub use crate::reader::{Reader, ReaderError};
+pub use crate::{
+    builder::{Builder, BuilderError},
+    entry::{Encodable, Entry},
+    reader::{Reader, ReaderError},
+};
 
 pub mod builder;
 pub mod entry;
@@ -85,13 +87,13 @@ pub mod tests {
     #[derive(Ord, PartialOrd, Eq, PartialEq, Debug)]
     pub struct TestString(pub String);
 
-    impl super::Encodable<TestString> for TestString {
-        fn encode_size(item: &TestString) -> Option<usize> {
-            Some(item.0.as_bytes().len())
+    impl super::Encodable for TestString {
+        fn encode_size(&self) -> Option<usize> {
+            Some(self.0.as_bytes().len())
         }
 
-        fn encode<W: Write>(item: &TestString, write: &mut W) -> Result<(), std::io::Error> {
-            write.write_all(item.0.as_bytes()).map(|_| ())
+        fn encode<W: Write>(&self, write: &mut W) -> Result<(), std::io::Error> {
+            write.write_all(self.0.as_bytes()).map(|_| ())
         }
 
         fn decode<R: Read>(data: &mut R, size: usize) -> Result<TestString, std::io::Error> {
