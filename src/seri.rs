@@ -98,7 +98,8 @@ impl Checkpoint {
             return Err(SerializationError::InvalidObjectType);
         }
 
-        // TODO: Test performance of this heap alloc vs hard coding max size vec on stack
+        // TODO: Test performance of this heap alloc vs hard coding max size vec on
+        // stack
         let entry_position = checkpoint_cursor.read_u64::<LittleEndian>()?;
         let mut levels = Vec::with_capacity(nb_levels);
         for _i in 0..nb_levels {
@@ -126,32 +127,35 @@ impl Checkpoint {
 
 pub struct Entry<K, V>
 where
-    K: Ord + Encodable<K>,
-    V: Encodable<V>,
+    K: Ord + Encodable,
+    V: Encodable,
 {
     pub entry: CrateEntry<K, V>,
 }
 
 impl<K, V> Entry<K, V>
 where
-    K: Ord + Encodable<K>,
-    V: Encodable<V>,
+    K: Ord + Encodable,
+    V: Encodable,
 {
-    pub fn write<W: Write>(&self, output: &mut W) -> Result<(), SerializationError> {
-        let (key_size, key_data) = match <K as Encodable<K>>::encode_size(&self.entry.key) {
+    pub fn write<W: Write>(
+        entry: &CrateEntry<K, V>,
+        output: &mut W,
+    ) -> Result<(), SerializationError> {
+        let (key_size, key_data) = match entry.key.encoded_size() {
             Some(size) => (size, None),
             None => {
                 let mut buffer = Vec::new();
-                <K as Encodable<K>>::encode(&self.entry.key, &mut buffer)?;
+                entry.key.encode(&mut buffer)?;
                 (buffer.len(), Some(buffer))
             }
         };
 
-        let (value_size, value_data) = match <V as Encodable<V>>::encode_size(&self.entry.value) {
+        let (value_size, value_data) = match entry.value.encoded_size() {
             Some(size) => (size, None),
             None => {
                 let mut buffer = Vec::new();
-                <V as Encodable<V>>::encode(&self.entry.value, &mut buffer)?;
+                entry.value.encode(&mut buffer)?;
                 (buffer.len(), Some(buffer))
             }
         };
@@ -164,16 +168,16 @@ where
         output.write_u16::<LittleEndian>(key_size as u16)?;
         output.write_u16::<LittleEndian>(value_size as u16)?;
 
-        if let Some(key_data) = key_data {
+        if let Some(key_data) = key_data.as_ref() {
             output.write_all(&key_data)?;
         } else {
-            <K as Encodable<K>>::encode(&self.entry.key, output)?;
+            entry.key.encode(output)?;
         }
 
-        if let Some(value_data) = value_data {
+        if let Some(value_data) = value_data.as_ref() {
             output.write_all(&value_data)?;
         } else {
-            <V as Encodable<V>>::encode(&self.entry.value, output)?;
+            entry.value.encode(output)?;
         }
 
         Ok(())
@@ -192,8 +196,8 @@ where
 
         let key_size = data_cursor.read_u16::<LittleEndian>()? as usize;
         let data_size = data_cursor.read_u16::<LittleEndian>()? as usize;
-        let key = <K as Encodable<K>>::decode(data_cursor, key_size)?;
-        let value = <V as Encodable<V>>::decode(data_cursor, data_size)?;
+        let key = <K as Encodable>::decode(data_cursor, key_size)?;
+        let value = <V as Encodable>::decode(data_cursor, data_size)?;
 
         let entry_file_size = 1 + 2 + 2 + key_size + data_size;
         let entry = CrateEntry { key, value };
@@ -211,15 +215,15 @@ where
         let key_size = data_cursor.read_u16::<LittleEndian>()? as usize;
         let _data_size = data_cursor.read_u16::<LittleEndian>()? as usize;
 
-        let key = <K as Encodable<K>>::decode(&mut data_cursor, key_size)?;
+        let key = <K as Encodable>::decode(&mut data_cursor, key_size)?;
         Ok(key)
     }
 }
 
 pub enum Object<K, V>
 where
-    K: Ord + Encodable<K>,
-    V: Encodable<V>,
+    K: Ord + Encodable,
+    V: Encodable,
 {
     Entry(Entry<K, V>),
     Checkpoint(Checkpoint),
@@ -227,8 +231,8 @@ where
 
 impl<K, V> Object<K, V>
 where
-    K: Ord + Encodable<K>,
-    V: Encodable<V>,
+    K: Ord + Encodable,
+    V: Encodable,
 {
     pub fn read(
         data: &[u8],
@@ -313,7 +317,7 @@ mod tests {
                 value: TestString("value".to_string()),
             },
         };
-        entry.write(&mut data).ok().unwrap();
+        Entry::write(&entry.entry, &mut data).unwrap();
 
         let (read_entry, size) = Entry::<TestString, TestString>::read_slice(&data)
             .ok()
@@ -338,7 +342,7 @@ mod tests {
                 value: UnsizedString("value".to_string()),
             },
         };
-        entry.write(&mut data).ok().unwrap();
+        Entry::write(&entry.entry, &mut data).unwrap();
 
         let (read_entry, size) = Entry::<UnsizedString, UnsizedString>::read_slice(&data)
             .ok()
@@ -372,7 +376,7 @@ mod tests {
                 value: TestString("value".to_string()),
             },
         };
-        entry.write(&mut cursor).ok().unwrap();
+        Entry::write(&entry.entry, &mut cursor).unwrap();
 
         let chk_size = match Object::<TestString, TestString>::read(&data, 1)
             .ok()
@@ -406,13 +410,13 @@ mod tests {
     #[derive(Ord, PartialOrd, Eq, PartialEq, Debug)]
     pub struct UnsizedString(pub String);
 
-    impl super::Encodable<UnsizedString> for UnsizedString {
-        fn encode_size(_item: &UnsizedString) -> Option<usize> {
+    impl super::Encodable for UnsizedString {
+        fn encoded_size(&self) -> Option<usize> {
             None
         }
 
-        fn encode<W: Write>(item: &UnsizedString, write: &mut W) -> Result<(), std::io::Error> {
-            write.write_all(item.0.as_bytes()).map(|_| ())
+        fn encode<W: Write>(&self, write: &mut W) -> Result<(), std::io::Error> {
+            write.write_all(self.0.as_bytes()).map(|_| ())
         }
 
         fn decode<R: Read>(data: &mut R, size: usize) -> Result<UnsizedString, std::io::Error> {

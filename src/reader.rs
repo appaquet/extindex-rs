@@ -16,13 +16,11 @@ use std::{fs::File, path::Path};
 
 use crate::{seri, Encodable, Entry};
 
-///
 /// Index reader
-///
 pub struct Reader<K, V>
 where
-    K: Ord + Encodable<K>,
-    V: Encodable<V>,
+    K: Ord + Encodable,
+    V: Encodable,
 {
     _file: File,
     data: memmap2::Mmap,
@@ -33,12 +31,10 @@ where
 
 impl<K, V> Reader<K, V>
 where
-    K: Ord + Encodable<K>,
-    V: Encodable<V>,
+    K: Ord + Encodable,
+    V: Encodable,
 {
-    ///
-    /// Open an index file built using the Builder at the given path.
-    ///
+    /// Opens an index file built using the Builder at the given path.
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Reader<K, V>, ReaderError> {
         let file_meta = std::fs::metadata(path.as_ref())?;
         if file_meta.len() > std::usize::MAX as u64 {
@@ -75,43 +71,37 @@ where
         })
     }
 
-    ///
-    /// Finds any entry matching the given needle. This means that there is no guarantee on
-    /// which entry is returned first if the key is present multiple times.
-    ///
+    /// Finds any entry matching the given needle. This means that there is no
+    /// guarantee on which entry is returned first if the key is present
+    /// multiple times.
     pub fn find(&self, needle: &K) -> Result<Option<Entry<K, V>>, ReaderError> {
         Ok(self
             .find_entry_position(needle, false)?
             .map(|file_entry| file_entry.entry))
     }
 
+    /// Finds the first entry matching the given needle. This is guarantee to
+    /// return the first entry that the iterator had given at build time.
     ///
-    /// Finds the first entry matching the given needle. This is guarantee to return the first entry
-    /// that the iterator had given at build time.
-    ///
-    /// Warning: Make sure that you sort by key + value and use stable sorting if you care in
-    /// which order values are returned.
-    ///
+    /// Warning: Make sure that you sort by key + value and use stable sorting
+    /// if you care in which order values are returned.
     pub fn find_first(&self, needle: &K) -> Result<Option<Entry<K, V>>, ReaderError> {
         Ok(self
             .find_entry_position(needle, true)?
             .map(|file_entry| file_entry.entry))
     }
 
-    ///
-    /// Returns an iterator that iterates from the beginning of the index to the index of the index.
-    ///
+    /// Returns an iterator that iterates from the beginning of the index to the
+    /// index of the index.
     pub fn iter<'a>(&'a self) -> impl Iterator<Item = Entry<K, V>> + 'a {
         self.iterate_entries_from_position(None)
             .map(|file_entry| file_entry.entry)
     }
 
-    ///
     /// Returns an iterator that iterates from the given needle.
     ///
-    /// Warning: Make sure that you sort by key + value and use stable sorting if you care in
-    /// which order values are returned.
-    ///
+    /// Warning: Make sure that you sort by key + value and use stable sorting
+    /// if you care in which order values are returned.
     pub fn iter_from<'a>(
         &'a self,
         needle: &K,
@@ -235,13 +225,11 @@ where
     }
 }
 
-///
 /// Iterator over entries of the index.
-///
 struct FileEntryIterator<'reader, K, V>
 where
-    K: Ord + Encodable<K>,
-    V: Encodable<V>,
+    K: Ord + Encodable,
+    V: Encodable,
 {
     reader: &'reader Reader<K, V>,
     current_position: usize,
@@ -249,8 +237,8 @@ where
 
 impl<'reader, K, V> Iterator for FileEntryIterator<'reader, K, V>
 where
-    K: Ord + Encodable<K>,
-    V: Encodable<V>,
+    K: Ord + Encodable,
+    V: Encodable,
 {
     type Item = FileEntry<K, V>;
 
@@ -277,21 +265,17 @@ where
     }
 }
 
-///
 /// Entry found at a specific position of the index
-///
 struct FileEntry<K, V>
 where
-    K: Ord + Encodable<K>,
-    V: Encodable<V>,
+    K: Ord + Encodable,
+    V: Encodable,
 {
     entry: Entry<K, V>,
     position: usize,
 }
 
-///
 /// Index reading error
-///
 #[derive(Debug)]
 pub enum ReaderError {
     TooBig,
@@ -314,12 +298,10 @@ impl From<std::io::Error> for ReaderError {
     }
 }
 
-///
 /// Represents a checkpoint in the index file.
-///
 struct Checkpoint<K>
 where
-    K: Ord + Encodable<K>,
+    K: Ord + Encodable,
 {
     entry_key: K,
     entry_file_position: usize,
@@ -328,7 +310,7 @@ where
 
 struct FindCheckpoint<K>
 where
-    K: Ord + Encodable<K>,
+    K: Ord + Encodable,
 {
     checkpoint: Checkpoint<K>,
     level: usize,

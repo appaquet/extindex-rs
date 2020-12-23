@@ -36,7 +36,7 @@ fn bench_random_access_1_million_known_size(b: &mut Bencher) {
     let index_file = tempfile::NamedTempFile::new().unwrap();
     let index_file = index_file.path();
 
-    let builder = Builder::new(index_file).with_extsort_max_size(200_000);
+    let builder = Builder::new(index_file).with_extsort_segment_size(200_000);
     builder.build(create_known_size_entries(1_000_000)).unwrap();
 
     let index = Reader::<SizedString, SizedString>::open(&index_file).unwrap();
@@ -82,7 +82,7 @@ fn bench_random_access_1_million_unknown_size(b: &mut Bencher) {
     let index_file = tempfile::NamedTempFile::new().unwrap();
     let index_file = index_file.path();
 
-    let builder = Builder::new(index_file).with_extsort_max_size(200_000);
+    let builder = Builder::new(index_file).with_extsort_segment_size(200_000);
     builder
         .build(create_unknown_size_entries(1_000_000))
         .unwrap();
@@ -117,13 +117,13 @@ fn create_unknown_size_entries(
 #[derive(Ord, PartialOrd, Eq, PartialEq, Debug)]
 struct SizedString(String);
 
-impl Encodable<SizedString> for SizedString {
-    fn encode_size(item: &SizedString) -> Option<usize> {
-        Some(item.0.as_bytes().len())
+impl Encodable for SizedString {
+    fn encoded_size(&self) -> Option<usize> {
+        Some(self.0.as_bytes().len())
     }
 
-    fn encode<W: Write>(item: &SizedString, write: &mut W) -> Result<(), std::io::Error> {
-        write.write_all(item.0.as_bytes()).map(|_| ())
+    fn encode<W: Write>(&self, write: &mut W) -> Result<(), std::io::Error> {
+        write.write_all(self.0.as_bytes()).map(|_| ())
     }
 
     fn decode<R: Read>(data: &mut R, size: usize) -> Result<SizedString, std::io::Error> {
@@ -136,13 +136,13 @@ impl Encodable<SizedString> for SizedString {
 #[derive(Ord, PartialOrd, Eq, PartialEq, Debug)]
 pub struct UnsizedString(pub String);
 
-impl Encodable<UnsizedString> for UnsizedString {
-    fn encode_size(_item: &UnsizedString) -> Option<usize> {
+impl Encodable for UnsizedString {
+    fn encoded_size(&self) -> Option<usize> {
         None
     }
 
-    fn encode<W: Write>(item: &UnsizedString, write: &mut W) -> Result<(), std::io::Error> {
-        write.write_all(item.0.as_bytes()).map(|_| ())
+    fn encode<W: Write>(&self, write: &mut W) -> Result<(), std::io::Error> {
+        write.write_all(self.0.as_bytes()).map(|_| ())
     }
 
     fn decode<R: Read>(data: &mut R, size: usize) -> Result<UnsizedString, std::io::Error> {

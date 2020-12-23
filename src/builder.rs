@@ -12,85 +12,79 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::fs::OpenOptions;
-use std::io::{BufWriter, Write};
-use std::path::PathBuf;
+use std::{
+    fs::OpenOptions,
+    io::{BufWriter, Write},
+    path::PathBuf,
+};
 
 use extsort::ExternalSorter;
 
-use crate::seri;
-use crate::utils::CountedWrite;
-use crate::{Encodable, Entry};
+use crate::{seri, utils::CountedWrite, Encodable, Entry};
 
 const CHECKPOINT_WRITE_UPCOMING_WITHIN_DISTANCE: u64 = 3;
 const LEVELS_MINIMUM_ITEMS: u64 = 2;
 
+/// Index builder that creates a file index from any iterator. If the given
+/// iterator is already sorted, the `build_from_sorted` method can be used,
+/// while `build` can take any iterator. The `build` method will sort the
+/// iterator first using external sorting using the `extsort` crate.
 ///
-/// Index builder that creates a file index from any iterator. If the given iterator is already sorted,
-/// the `build_from_sorted` method can be used, while `build` can take any iterator. The `build` method
-/// will sort the iterator first using external sorting using the `extsort` crate.
-///
-/// As the index is being built, checkpoints / nodes are added to the file. These checkpoints / nodes
-/// are similar to the ones in a skip list, except that they point to previous checkpoints instead of
-/// pointing to next checkpoints.
-///
+/// As the index is being built, checkpoints / nodes are added to the file.
+/// These checkpoints / nodes are similar to the ones in a skip list, except
+/// that they point to previous checkpoints instead of pointing to next
+/// checkpoints.
 pub struct Builder<K, V>
 where
-    K: Ord + Encodable<K>,
-    V: Encodable<V>,
+    K: Ord + Encodable,
+    V: Encodable,
 {
     path: PathBuf,
     log_base: f64,
-    extsort_max_size: Option<usize>,
+    extsort_segment_size: Option<usize>,
     phantom: std::marker::PhantomData<(K, V)>,
 }
 
 impl<K, V> Builder<K, V>
 where
-    K: Ord + Encodable<K>,
-    V: Encodable<V>,
+    K: Ord + Encodable,
+    V: Encodable,
 {
-    ///
-    /// Create an index builder that will write to the given file path.
-    ///
+    /// Creates an index builder that will write to the given file path.
     pub fn new<P: Into<PathBuf>>(path: P) -> Builder<K, V> {
         Builder {
             path: path.into(),
             log_base: 5.0,
-            extsort_max_size: None,
+            extsort_segment_size: None,
             phantom: std::marker::PhantomData,
         }
     }
 
+    /// Indicates approximate number of items we want per last-level checkpoint.
     ///
-    /// Indicate approximately how many items we want per last-level checkpoint. A higher value
-    /// means that once a checkpoint in which we know the item is after is found, we may need to
-    /// iterate through up to `log_base` items. A lower value will prevent creating too many levels
-    /// when the index gets bigger, but will require more scanning through more entries to find the
-    /// right one.
+    /// A higher value means that once a checkpoint in which we know the
+    /// item is after is found, we may need to iterate through up to
+    /// `log_base` items. A lower value will prevent creating too many levels
+    /// when the index gets bigger, but will require more scanning through more
+    /// entries to find the right one.
     ///
     /// Default value: 5.0
-    ///
     pub fn with_log_base(mut self, log_base: f64) -> Self {
         self.log_base = log_base;
         self
     }
 
-    ///
-    /// When using the `build` method from a non-sorted iterator, this value is passed to the
-    /// `extsort` crate to define how many items will be buffered to memory before being dumped
-    /// to disk.
+    /// When using the `build` method from a non-sorted iterator, this value is
+    /// passed to the `extsort` crate to define how many items will be buffered
+    /// to memory before being flushed to disk.
     ///
     /// This number is the actual number of entries, not the sum of their size.
-    ///
-    pub fn with_extsort_max_size(mut self, max_size: usize) -> Self {
-        self.extsort_max_size = Some(max_size);
+    pub fn with_extsort_segment_size(mut self, max_size: usize) -> Self {
+        self.extsort_segment_size = Some(max_size);
         self
     }
 
-    ///
-    /// Build the index using a non-sorted iterator.
-    ///
+    /// Builds the index using a non-sorted iterator.
     pub fn build<I>(self, iter: I) -> Result<(), BuilderError>
     where
         I: Iterator<Item = Entry<K, V>>,
@@ -98,11 +92,10 @@ where
         let sort_dir = self.path.with_extension("tmp_sort");
         std::fs::create_dir_all(&sort_dir)?;
 
-        let mut sorter = ExternalSorter::new();
-        sorter.set_sort_dir(sort_dir);
+        let mut sorter = ExternalSorter::new().with_sort_dir(sort_dir);
 
-        if let Some(max_size) = self.extsort_max_size {
-            sorter.set_max_size(max_size);
+        if let Some(segment_size) = self.extsort_segment_size {
+            sorter = sorter.with_segment_size(segment_size);
         }
 
         let sorted_iter = sorter.sort(iter)?;
@@ -111,9 +104,7 @@ where
         self.build_from_sorted(sorted_iter, sorted_count)
     }
 
-    ///
-    /// Build the index using a sorted iterator.
-    ///
+    /// Builds the index using a sorted iterator.
     pub fn build_from_sorted<I>(self, iter: I, nb_items: u64) -> Result<(), BuilderError>
     where
         I: Iterator<Item = Entry<K, V>>,
@@ -142,7 +133,7 @@ where
             let mut last_entry_position: u64 = 0;
             for entry in iter {
                 last_entry_position = counted_output.written_count();
-                self.write_entry(&mut counted_output, entry)?;
+                self.write_entry(&mut counted_output, &entry)?;
                 entries_since_last_checkpoint += 1;
 
                 if entries_since_last_checkpoint >= checkpoint_interval {
@@ -188,10 +179,9 @@ where
     fn write_entry<W: Write>(
         &self,
         output: &mut W,
-        entry: Entry<K, V>,
+        entry: &Entry<K, V>,
     ) -> Result<(), BuilderError> {
-        let seri_entry = seri::Entry { entry };
-        seri_entry.write(output)?;
+        seri::Entry::write(&entry, output)?;
         Ok(())
     }
 
@@ -258,9 +248,7 @@ fn levels_for_items_count(nb_items: u64, log_base: f64) -> Vec<Level> {
     levels
 }
 
-///
-///
-///
+/// Represent a level of the skip list index.
 #[derive(Debug)]
 struct Level {
     id: usize,
@@ -269,9 +257,7 @@ struct Level {
     last_item: Option<u64>,
 }
 
-///
-/// Index building related errors
-///
+/// Index building related errors.
 #[derive(Debug)]
 pub enum BuilderError {
     MaxSize,

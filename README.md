@@ -18,45 +18,43 @@ checkpoints/nodes ahead in the file.
 
 # Example
 ```rust
- extern crate extindex;
- extern crate tempdir;
+extern crate extindex;
 
- use std::io::{Read, Write};
- use extindex::{Builder, Encodable, Entry, Reader};
+use std::io::{Read, Write};
+use extindex::{Builder, Encodable, Entry, Reader};
 
- #[derive(Ord, PartialOrd, Eq, PartialEq, Debug)]
- struct TestString(String);
+#[derive(Ord, PartialOrd, Eq, PartialEq, Debug)]
+struct TestString(String);
 
- impl Encodable<TestString> for TestString {
-     fn encode_size(item: &TestString) -> Option<usize> {
-         Some(item.0.as_bytes().len())
-     }
+impl Encodable for TestString {
+    fn encoded_size(&self) -> Option<usize> {
+        Some(self.0.as_bytes().len())
+    }
 
-     fn encode<W: Write>(item: &TestString, write: &mut W) -> Result<(), std::io::Error> {
-         write.write(item.0.as_bytes()).map(|_| ())
-     }
+    fn encode<W: Write>(&self, write: &mut W) -> Result<(), std::io::Error> {
+        write.write_all(self.0.as_bytes()).map(|_| ())
+    }
 
-     fn decode<R: Read>(data: &mut R, size: usize) -> Result<TestString, std::io::Error> {
-         let mut bytes = vec![0u8; size];
-         data.read_exact(&mut bytes)?;
-         Ok(TestString(String::from_utf8_lossy(&bytes).to_string()))
-     }
- }
+    fn decode<R: Read>(data: &mut R, size: usize) -> Result<TestString, std::io::Error> {
+        let mut bytes = vec![0u8; size];
+        data.read_exact(&mut bytes)?;
+        Ok(TestString(String::from_utf8_lossy(&bytes).to_string()))
+    }
+}
 
- fn main() {
-    let tempdir = tempdir::TempDir::new("extindex").unwrap();
-    let index_file = tempdir.path().join("index.idx");
+fn main() {
+    let index_file = tempfile::NamedTempFile::new().unwrap();
 
-    let builder = Builder::new(index_file.clone());
+    let builder = Builder::new(index_file.path());
     let entries = vec![
-        Entry::new(TestString("mykey".to_string()), TestString("my value".to_string()))
+    Entry::new(TestString("mykey".to_string()), TestString("my value".to_string()))
     ];
     builder.build(entries.into_iter()).unwrap();
 
-    let reader = Reader::<TestString, TestString>::open(&index_file).unwrap();
+    let reader = Reader::<TestString, TestString>::open(index_file).unwrap();
     assert!(reader.find(&TestString("mykey".to_string())).unwrap().is_some());
     assert!(reader.find(&TestString("notfound".to_string())).unwrap().is_none());
- }
+}
 ```
 
 # TODO
