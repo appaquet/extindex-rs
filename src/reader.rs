@@ -93,7 +93,7 @@ where
 
     /// Returns an iterator that iterates from the beginning of the index to the
     /// index of the index.
-    pub fn iter<'a>(&'a self) -> impl Iterator<Item = Entry<K, V>> + 'a {
+    pub fn iter(&self) -> impl Iterator<Item = Entry<K, V>> + '_ {
         self.iterate_entries_from_position(None)
             .map(|file_entry| file_entry.entry)
     }
