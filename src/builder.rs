@@ -181,7 +181,7 @@ where
         output: &mut W,
         entry: &Entry<K, V>,
     ) -> Result<(), BuilderError> {
-        seri::Entry::write(&entry, output)?;
+        seri::Entry::write(entry, output)?;
         Ok(())
     }
 

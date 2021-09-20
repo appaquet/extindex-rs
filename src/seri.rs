@@ -169,13 +169,13 @@ where
         output.write_u16::<LittleEndian>(value_size as u16)?;
 
         if let Some(key_data) = key_data.as_ref() {
-            output.write_all(&key_data)?;
+            output.write_all(key_data)?;
         } else {
             entry.key.encode(output)?;
         }
 
         if let Some(value_data) = value_data.as_ref() {
-            output.write_all(&value_data)?;
+            output.write_all(value_data)?;
         } else {
             entry.value.encode(output)?;
         }
