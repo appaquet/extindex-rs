@@ -7,7 +7,7 @@ license = "Apache-2.0"
 readme = "README.md"
 keywords = ["index", "skip", "list", "persistence"]
 repository = "https://github.com/appaquet/extindex-rs"
-edition = "2018"
+edition = "2021"
 
 [dependencies]
 extsort = "0.4"
