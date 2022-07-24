@@ -22,8 +22,13 @@ memmap2 = "0.5"
 serde = {version = "1.0", optional = true}
 
 [dev-dependencies]
+criterion = "0.3"
 skeptic = "0.13"
 tempfile = "3.1"
 
 [build-dependencies]
 skeptic = "0.13"
+
+[[bench]]
+harness = false
+name = "reader"

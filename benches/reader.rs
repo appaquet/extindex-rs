@@ -12,47 +12,77 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![feature(test)]
-extern crate test;
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 
-use std::io::{Read, Write};
-use test::Bencher;
+use std::{
+    io::{Read, Write},
+    time::Duration,
+};
 
 use extindex::{Builder, Encodable, Entry, Reader};
 
-#[bench]
-fn bench_build_100_000_known_size(b: &mut Bencher) {
-    b.iter(|| {
-        let index_file = tempfile::NamedTempFile::new().unwrap();
-        let index_file = index_file.path();
+fn bench_index_builder(c: &mut Criterion) {
+    let mut group = c.benchmark_group("Builder");
+    group.sample_size(10);
+    group.measurement_time(Duration::from_secs(7));
+    group.sampling_mode(criterion::SamplingMode::Flat);
+    group.warm_up_time(Duration::from_millis(100));
 
-        let builder = Builder::new(index_file);
-        builder.build(create_known_size_entries(100_000)).unwrap();
-    })
+    let sizes = [10_000, 100_000, 1_000_000];
+    for size in sizes {
+        group.bench_with_input(BenchmarkId::new("known size", size), &size, |b, size| {
+            b.iter(|| {
+                let index_file = tempfile::NamedTempFile::new().unwrap();
+                let index_file = index_file.path();
+
+                let builder = Builder::new(index_file);
+                builder.build(create_known_size_entries(*size)).unwrap();
+            });
+        });
+
+        group.bench_with_input(BenchmarkId::new("unknown size", size), &size, |b, size| {
+            b.iter(|| {
+                let index_file = tempfile::NamedTempFile::new().unwrap();
+                let index_file = index_file.path();
+
+                let builder = Builder::new(index_file);
+                builder.build(create_unknown_size_entries(*size)).unwrap();
+            });
+        });
+    }
 }
 
-#[bench]
-fn bench_random_access_1_million_known_size(b: &mut Bencher) {
+fn bench_random_access(c: &mut Criterion) {
+    let mut group = c.benchmark_group("RandomAccess");
+    group.sample_size(10);
+    group.measurement_time(Duration::from_secs(7));
+    group.sampling_mode(criterion::SamplingMode::Flat);
+    group.warm_up_time(Duration::from_millis(100));
+
     let index_file = tempfile::NamedTempFile::new().unwrap();
     let index_file = index_file.path();
 
     let builder = Builder::new(index_file).with_extsort_segment_size(200_000);
-    builder.build(create_known_size_entries(1_000_000)).unwrap();
+    builder
+        .build(create_unknown_size_entries(1_000_000))
+        .unwrap();
 
-    let index = Reader::<SizedString, SizedString>::open(&index_file).unwrap();
-    let lookup_keys = vec![
-        SizedString("aaaa".to_string()),
-        SizedString("key:0".to_string()),
-        SizedString("key:10000".to_string()),
-        SizedString("key:999999".to_string()),
-        SizedString("zzzz".to_string()),
+    let index = Reader::<UnsizedString, UnsizedString>::open(&index_file).unwrap();
+    let keys = vec![
+        UnsizedString("aaaa".to_string()),
+        UnsizedString("key:0".to_string()),
+        UnsizedString("key:10000".to_string()),
+        UnsizedString("key:999999".to_string()),
+        UnsizedString("zzzz".to_string()),
     ];
 
-    b.iter(|| {
-        for key in &lookup_keys {
-            test::black_box(index.find(&key).unwrap());
-        }
-    })
+    for key in keys {
+        group.bench_with_input(BenchmarkId::new("key", &key), &key, |b, key| {
+            b.iter(|| {
+                black_box(index.find(key).unwrap());
+            });
+        });
+    }
 }
 
 fn create_known_size_entries(
@@ -63,43 +93,6 @@ fn create_known_size_entries(
             SizedString(format!("key:{}", idx)),
             SizedString(format!("val:{}", idx)),
         )
-    })
-}
-
-#[bench]
-fn bench_build_100_000_unknown_size(b: &mut Bencher) {
-    b.iter(|| {
-        let index_file = tempfile::NamedTempFile::new().unwrap();
-        let index_file = index_file.path();
-
-        let builder = Builder::new(index_file);
-        builder.build(create_unknown_size_entries(100_000)).unwrap();
-    })
-}
-
-#[bench]
-fn bench_random_access_1_million_unknown_size(b: &mut Bencher) {
-    let index_file = tempfile::NamedTempFile::new().unwrap();
-    let index_file = index_file.path();
-
-    let builder = Builder::new(index_file).with_extsort_segment_size(200_000);
-    builder
-        .build(create_unknown_size_entries(1_000_000))
-        .unwrap();
-
-    let index = Reader::<UnsizedString, UnsizedString>::open(&index_file).unwrap();
-    let lookup_keys = vec![
-        UnsizedString("aaaa".to_string()),
-        UnsizedString("key:0".to_string()),
-        UnsizedString("key:10000".to_string()),
-        UnsizedString("key:999999".to_string()),
-        UnsizedString("zzzz".to_string()),
-    ];
-
-    b.iter(|| {
-        for key in &lookup_keys {
-            test::black_box(index.find(&key).unwrap());
-        }
     })
 }
 
@@ -133,6 +126,12 @@ impl Encodable for SizedString {
     }
 }
 
+impl std::fmt::Display for SizedString {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 #[derive(Ord, PartialOrd, Eq, PartialEq, Debug)]
 pub struct UnsizedString(pub String);
 
@@ -151,3 +150,12 @@ impl Encodable for UnsizedString {
         Ok(UnsizedString(String::from_utf8_lossy(&bytes).to_string()))
     }
 }
+
+impl std::fmt::Display for UnsizedString {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+criterion_group!(benches, bench_index_builder, bench_random_access,);
+criterion_main!(benches);
