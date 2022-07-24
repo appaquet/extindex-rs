@@ -158,6 +158,31 @@ fn reader_iter_unique_key() {
     }
 }
 
+#[test]
+fn test_serde_struct() {
+    #[derive(Ord, PartialOrd, Eq, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
+    struct SerdeStruct {
+        a: u32,
+        b: String,
+    }
+
+    let index_file = tempfile::NamedTempFile::new().unwrap();
+
+    let builder = Builder::new(index_file.path());
+    let entries = vec![Entry::new(
+        "my_key".to_string(),
+        SerdeStruct {
+            a: 123,
+            b: "my value".to_string(),
+        },
+    )];
+    builder.build(entries.into_iter()).unwrap();
+
+    let reader = Reader::<String, SerdeStruct>::open(index_file).unwrap();
+    assert!(reader.find(&"my_key".to_string()).unwrap().is_some());
+    assert!(reader.find(&"notfound".to_string()).unwrap().is_none());
+}
+
 fn create_entries(
     nb_entries: usize,
     extra: &'static str,
