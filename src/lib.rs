@@ -71,11 +71,13 @@ extern crate log;
 
 pub use crate::{
     builder::{Builder, BuilderError},
-    entry::{Encodable, Entry},
+    encodable::Encodable,
+    entry::Entry,
     reader::{Reader, ReaderError},
 };
 
 pub mod builder;
+pub mod encodable;
 pub mod entry;
 pub mod reader;
 

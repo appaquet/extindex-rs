@@ -230,14 +230,13 @@ fn levels_for_items_count(nb_items: u64, log_base: f64) -> Vec<Level> {
 
     let mut levels = Vec::new();
     let mut max_items = (nb_items / log_base_u64).max(1);
-    for level_id in 0..nb_levels {
+    for _ in 0..nb_levels {
         // we don't want to create an extra level with only a few items per checkpoint
         if !levels.is_empty() && max_items < LEVELS_MINIMUM_ITEMS {
             break;
         }
 
         levels.push(Level {
-            id: level_id as usize,
             expected_items: max_items,
             current_items: 0,
             last_item: None,
@@ -251,7 +250,6 @@ fn levels_for_items_count(nb_items: u64, log_base: f64) -> Vec<Level> {
 /// Represent a level of the skip list index.
 #[derive(Debug)]
 struct Level {
-    id: usize,
     expected_items: u64,
     current_items: u64,
     last_item: Option<u64>,

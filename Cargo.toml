@@ -1,23 +1,29 @@
 [package]
-name = "extindex"
-description = "Persisted immutable index"
-version = "0.4.1"
 authors = ["Andre-Philippe Paquet <appaquet@gmail.com>"]
-license = "Apache-2.0"
-readme = "README.md"
-keywords = ["index", "skip", "list", "persistence"]
-repository = "https://github.com/appaquet/extindex-rs"
+description = "Persisted immutable index"
 edition = "2021"
+keywords = ["index", "skip", "list", "persistence"]
+license = "Apache-2.0"
+name = "extindex"
+readme = "README.md"
+repository = "https://github.com/appaquet/extindex-rs"
+version = "0.4.1"
+
+[features]
+default = ["serde"]
+serde = ["dep:serde", "bincode"]
 
 [dependencies]
-extsort = "0.4"
+bincode = {version = "2.0.0-rc.1", features=["serde"], optional = true}
 byteorder = "1.3"
+extsort = "0.4"
 log = "0.4"
 memmap2 = "0.5"
+serde = {version = "1.0", optional = true}
 
 [dev-dependencies]
-tempfile = "3.1"
 skeptic = "0.13"
+tempfile = "3.1"
 
 [build-dependencies]
 skeptic = "0.13"

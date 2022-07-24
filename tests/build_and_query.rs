@@ -12,8 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use extindex::{Builder, Encodable, Entry, Reader};
-use std::io::{Read, Write};
+use extindex::{Builder, Entry, Reader};
 
 #[test]
 fn build_and_read_unique_key() {
@@ -22,7 +21,7 @@ fn build_and_read_unique_key() {
     let builder = Builder::new(index_file.path());
     builder.build(create_entries(1_000, "")).unwrap();
 
-    let reader = Reader::<TestString, TestString>::open(index_file.path()).unwrap();
+    let reader = Reader::<String, String>::open(index_file.path()).unwrap();
     assert!(find_entry(&reader, "aaaa").is_none());
     assert!(find_entry(&reader, "key:-1").is_none());
     assert!(find_entry(&reader, "key:0").is_some());
@@ -53,7 +52,7 @@ fn build_and_read_duplicate_key() {
     ];
     builder.build(entries.into_iter()).unwrap();
 
-    let reader = Reader::<TestString, TestString>::open(index_file.path()).unwrap();
+    let reader = Reader::<String, String>::open(index_file.path()).unwrap();
 
     assert_eq!(
         find_first_entry(&reader, "key:0"),
@@ -99,7 +98,7 @@ fn empty_index() {
     let builder = Builder::new(index_file.path());
     builder.build(create_entries(0, "")).unwrap();
 
-    match Reader::<TestString, TestString>::open(index_file.path()).err() {
+    match Reader::<String, String>::open(index_file.path()).err() {
         Some(extindex::reader::ReaderError::Empty) => {}
         _ => panic!("Unexpected return"),
     }
@@ -114,17 +113,11 @@ fn fuzz_build_read_1_to_650_items() {
         let builder = Builder::new(index_file.path());
         builder.build(create_entries(nb_entries, "")).unwrap();
 
-        let index = Reader::<TestString, TestString>::open(index_file.path()).unwrap();
+        let index = Reader::<String, String>::open(index_file.path()).unwrap();
         for i in 0..nb_entries {
-            index
-                .find(&TestString(format!("key:{}", i)))
-                .unwrap()
-                .unwrap();
+            index.find(&format!("key:{}", i)).unwrap().unwrap();
 
-            index
-                .find_first(&TestString(format!("key:{}", i)))
-                .unwrap()
-                .unwrap();
+            index.find_first(&format!("key:{}", i)).unwrap().unwrap();
         }
     }
 }
@@ -136,7 +129,7 @@ fn extsort_build_and_read() {
     let builder = Builder::new(index_file.path()).with_extsort_segment_size(50_000);
     builder.build(create_entries(100_000, "")).unwrap();
 
-    let reader = Reader::<TestString, TestString>::open(index_file.path()).unwrap();
+    let reader = Reader::<String, String>::open(index_file.path()).unwrap();
     assert!(find_entry(&reader, "aaaa").is_none());
     assert!(find_entry(&reader, "key:0").is_some());
     assert!(find_entry(&reader, "key:1").is_some());
@@ -155,74 +148,54 @@ fn reader_iter_unique_key() {
 
     // extract keys and sort in alphanumerical order
     let mut expected_keys: Vec<String> = create_entries(1_000, "")
-        .map(|entry| entry.key().0.clone())
+        .map(|entry| entry.key().clone())
         .collect();
     expected_keys.sort();
 
-    let reader = Reader::<TestString, TestString>::open(index_file.path()).unwrap();
+    let reader = Reader::<String, String>::open(index_file.path()).unwrap();
     for (found_item, expected_key) in reader.iter().zip(expected_keys) {
-        assert_eq!(found_item.key().0, expected_key);
+        assert_eq!(found_item.key(), &expected_key);
     }
 }
 
 fn create_entries(
     nb_entries: usize,
     extra: &'static str,
-) -> impl Iterator<Item = Entry<TestString, TestString>> + 'static {
+) -> impl Iterator<Item = Entry<String, String>> + 'static {
     (0..nb_entries)
         .map(move |idx| build_entry(format!("key:{}", idx), format!("val:{}:{}", extra, idx)))
 }
 
-fn build_entry(key: String, value: String) -> Entry<TestString, TestString> {
-    Entry::new(TestString(key), TestString(value))
+fn build_entry(key: String, value: String) -> Entry<String, String> {
+    Entry::new(key, value)
 }
 
-fn build_entry_ref(key: &str, value: &str) -> Entry<TestString, TestString> {
+fn build_entry_ref(key: &str, value: &str) -> Entry<String, String> {
     Entry::new(key_ref(key), key_ref(value))
 }
 
-fn find_entry(reader: &Reader<TestString, TestString>, key: &str) -> Option<String> {
+fn find_entry(reader: &Reader<String, String>, key: &str) -> Option<String> {
     reader
         .find(&key_ref(key))
         .unwrap()
-        .map(|entry| entry.value().0.clone())
+        .map(|entry| entry.value().clone())
 }
 
-fn find_first_entry(reader: &Reader<TestString, TestString>, key: &str) -> Option<String> {
+fn find_first_entry(reader: &Reader<String, String>, key: &str) -> Option<String> {
     reader
         .find_first(&key_ref(key))
         .unwrap()
-        .map(|entry| entry.value().0.clone())
+        .map(|entry| entry.value().clone())
 }
 
-fn collect_entries_from(reader: &Reader<TestString, TestString>, from: &str) -> Vec<String> {
+fn collect_entries_from(reader: &Reader<String, String>, from: &str) -> Vec<String> {
     reader
         .iter_from(&key_ref(from))
         .unwrap()
-        .map(|entry| entry.value().0.clone())
+        .map(|entry| entry.value().clone())
         .collect()
 }
 
-fn key_ref(key: &str) -> TestString {
-    TestString(key.to_string())
-}
-
-/// String wrapper to be encodable
-#[derive(Ord, PartialOrd, Eq, PartialEq, Debug)]
-struct TestString(String);
-
-impl Encodable for TestString {
-    fn encoded_size(&self) -> Option<usize> {
-        Some(self.0.as_bytes().len())
-    }
-
-    fn encode<W: Write>(&self, write: &mut W) -> Result<(), std::io::Error> {
-        write.write(self.0.as_bytes()).map(|_| ())
-    }
-
-    fn decode<R: Read>(data: &mut R, size: usize) -> Result<TestString, std::io::Error> {
-        let mut bytes = vec![0u8; size];
-        data.read_exact(&mut bytes)?;
-        Ok(TestString(String::from_utf8_lossy(&bytes).to_string()))
-    }
+fn key_ref(key: &str) -> String {
+    key.to_string()
 }
