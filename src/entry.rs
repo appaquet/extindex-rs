@@ -3,22 +3,8 @@ use std::{
     io::{Read, Write},
 };
 
-use crate::seri;
+use crate::{seri, Encodable};
 use extsort::Sortable;
-
-/// Trait representing a structure that can be encoded / serialized to a Writer
-/// and decoded / deserialized from a Reader.
-pub trait Encodable: Send + Sized {
-    /// Exact size that the encoded item will have, if known. If none is
-    /// returned, the encoding will be buffered in memory.
-    fn encoded_size(&self) -> Option<usize>;
-
-    /// Encodes the given item to the writer
-    fn encode<W: Write>(&self, write: &mut W) -> Result<(), std::io::Error>;
-
-    /// Decodes the given from the reader
-    fn decode<R: Read>(data: &mut R, size: usize) -> Result<Self, std::io::Error>;
-}
 
 /// An entry to be indexed, or retrieved from the index
 pub struct Entry<K, V>
