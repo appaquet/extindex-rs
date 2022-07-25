@@ -17,6 +17,7 @@ pass on a sorted iterator, since starting from the beginning would require knowi
 checkpoints/nodes ahead in the file.
 
 # Example <!-- keep in sync with serde_struct.rs  -->
+
 ```rust
 extern crate extindex;
 extern crate serde;
@@ -52,4 +53,3 @@ fn main() {
 # TODO
 
 - [ ] Possibility to use Bloom filter to prevent hitting the disk when index doesn't have a key
-- [ ] Check how HashSet get signature

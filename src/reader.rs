@@ -12,14 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{fs::File, path::Path};
+use std::{borrow::Borrow, fs::File, path::Path};
 
 use crate::{seri, Encodable, Entry};
 
 /// Index reader
 pub struct Reader<K, V>
 where
-    K: Ord + Encodable,
+    K: Ord + PartialEq + Encodable,
     V: Encodable,
 {
     _file: File,
@@ -31,7 +31,7 @@ where
 
 impl<K, V> Reader<K, V>
 where
-    K: Ord + Encodable,
+    K: Ord + PartialEq + Encodable,
     V: Encodable,
 {
     /// Opens an index file built using the Builder at the given path.
@@ -74,7 +74,11 @@ where
     /// Finds any entry matching the given needle. This means that there is no
     /// guarantee on which entry is returned first if the key is present
     /// multiple times.
-    pub fn find(&self, needle: &K) -> Result<Option<Entry<K, V>>, ReaderError> {
+    pub fn find<Q: ?Sized>(&self, needle: &Q) -> Result<Option<Entry<K, V>>, ReaderError>
+    where
+        K: Borrow<Q>,
+        Q: Ord,
+    {
         Ok(self
             .find_entry_position(needle, false)?
             .map(|file_entry| file_entry.entry))
@@ -85,7 +89,11 @@ where
     ///
     /// Warning: Make sure that you sort by key + value and use stable sorting
     /// if you care in which order values are returned.
-    pub fn find_first(&self, needle: &K) -> Result<Option<Entry<K, V>>, ReaderError> {
+    pub fn find_first<Q: ?Sized>(&self, needle: &Q) -> Result<Option<Entry<K, V>>, ReaderError>
+    where
+        K: Borrow<Q>,
+        Q: Ord,
+    {
         Ok(self
             .find_entry_position(needle, true)?
             .map(|file_entry| file_entry.entry))
@@ -102,10 +110,14 @@ where
     ///
     /// Warning: Make sure that you sort by key + value and use stable sorting
     /// if you care in which order values are returned.
-    pub fn iter_from<'a>(
+    pub fn iter_from<'a, Q: ?Sized>(
         &'a self,
-        needle: &K,
-    ) -> Result<impl Iterator<Item = Entry<K, V>> + 'a, ReaderError> {
+        needle: &Q,
+    ) -> Result<impl Iterator<Item = Entry<K, V>> + 'a, ReaderError>
+    where
+        K: Borrow<Q>,
+        Q: Ord,
+    {
         let first_entry = self.find_entry_position(needle, true)?;
         let from_position = match first_entry {
             Some(entry) => entry.position,
@@ -149,11 +161,15 @@ where
         })
     }
 
-    fn find_entry_position(
+    fn find_entry_position<Q: ?Sized>(
         &self,
-        needle: &K,
+        needle: &Q,
         find_first_match: bool,
-    ) -> Result<Option<FileEntry<K, V>>, ReaderError> {
+    ) -> Result<Option<FileEntry<K, V>>, ReaderError>
+    where
+        K: Borrow<Q>,
+        Q: Ord + PartialEq + Eq,
+    {
         let last_checkpoint = self.read_checkpoint_and_key(self.last_checkpoint_position)?;
         let last_checkpoint_find = FindCheckpoint {
             level: 0,
@@ -164,11 +180,11 @@ where
         stack.push_front(last_checkpoint_find);
 
         while let Some(mut current) = stack.pop_front() {
-            if current.checkpoint.entry_key == *needle && !find_first_match {
+            if current.checkpoint.entry_key.borrow() == needle && !find_first_match {
                 return Ok(Some(
                     self.read_entry(current.checkpoint.entry_file_position)?,
                 ));
-            } else if *needle <= current.checkpoint.entry_key {
+            } else if needle <= current.checkpoint.entry_key.borrow() {
                 let next_checkpoint_position = current.checkpoint.next_checkpoints[current.level];
                 if next_checkpoint_position != 0 {
                     // go to next checkpoint
@@ -187,7 +203,7 @@ where
                     current.level += 1;
                     stack.push_front(current);
                 }
-            } else if *needle > current.checkpoint.entry_key {
+            } else if needle > current.checkpoint.entry_key.borrow() {
                 if current.level == self.nb_levels - 1 {
                     // we reached last level, we need to iterate to entry
                     return Ok(self.sequential_find_entry(
@@ -215,13 +231,17 @@ where
         }
     }
 
-    fn sequential_find_entry(
+    fn sequential_find_entry<Q: ?Sized>(
         &self,
         from_position: Option<usize>,
-        needle: &K,
-    ) -> Option<FileEntry<K, V>> {
+        needle: &Q,
+    ) -> Option<FileEntry<K, V>>
+    where
+        K: Borrow<Q>,
+        Q: Ord + PartialEq + Eq,
+    {
         self.iterate_entries_from_position(from_position)
-            .find(|read_entry| read_entry.entry.key == *needle)
+            .find(|read_entry| read_entry.entry.key.borrow() == needle)
     }
 }
 

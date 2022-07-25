@@ -196,31 +196,24 @@ fn build_entry(key: String, value: String) -> Entry<String, String> {
 }
 
 fn build_entry_ref(key: &str, value: &str) -> Entry<String, String> {
-    Entry::new(key_ref(key), key_ref(value))
+    Entry::new(key.to_string(), value.to_string())
 }
 
 fn find_entry(reader: &Reader<String, String>, key: &str) -> Option<String> {
-    reader
-        .find(&key_ref(key))
-        .unwrap()
-        .map(|entry| entry.value().clone())
+    reader.find(key).unwrap().map(|entry| entry.value().clone())
 }
 
 fn find_first_entry(reader: &Reader<String, String>, key: &str) -> Option<String> {
     reader
-        .find_first(&key_ref(key))
+        .find_first(key)
         .unwrap()
         .map(|entry| entry.value().clone())
 }
 
 fn collect_entries_from(reader: &Reader<String, String>, from: &str) -> Vec<String> {
     reader
-        .iter_from(&key_ref(from))
+        .iter_from(from)
         .unwrap()
         .map(|entry| entry.value().clone())
         .collect()
-}
-
-fn key_ref(key: &str) -> String {
-    key.to_string()
 }
