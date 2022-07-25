@@ -17,23 +17,51 @@ jobs:
           profile: minimal
           components: rustfmt, clippy
 
+      - uses: Swatinem/rust-cache@v1
+
       - name: Check formatting
         uses: actions-rs/cargo@v1.0.3
         with:
           command: fmt
           args: --all -- --check
 
-      - name: Run tests
-        uses: actions-rs/cargo@v1.0.3
-        with:
-          command: test
-          args: --all --all-features
-
       - name: Run clippy
         uses: actions-rs/clippy-check@v1.0.7
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           args: --all-features
+
+  rust_tests:
+    strategy:
+      fail-fast: true
+      matrix:
+        pair:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: x86_64-apple-darwin
+            os: macOS-11
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+
+    runs-on: ${{ matrix.pair.os }}
+
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions-rs/toolchain@v1.0.7
+        with:
+          toolchain: stable
+          profile: minimal
+
+      - uses: Swatinem/rust-cache@v1
+
+      - name: Tests
+        uses: actions-rs/cargo@v1.0.3
+        with:
+          command: test
+          args: --all --all-features
 
   markdown_links_check:
     runs-on: ubuntu-latest
