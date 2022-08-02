@@ -241,6 +241,7 @@ where
         Q: Ord + PartialEq + Eq,
     {
         self.iterate_entries_from_position(from_position)
+            .take_while(|read_entry| read_entry.entry.key.borrow() <= needle)
             .find(|read_entry| read_entry.entry.key.borrow() == needle)
     }
 }

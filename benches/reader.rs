@@ -24,7 +24,7 @@ use extindex::{Builder, Entry, Reader, Serializable};
 fn bench_index_builder(c: &mut Criterion) {
     let mut group = c.benchmark_group("Builder");
     group.sample_size(10);
-    group.measurement_time(Duration::from_secs(7));
+    group.measurement_time(Duration::from_secs(9));
     group.sampling_mode(criterion::SamplingMode::Flat);
     group.warm_up_time(Duration::from_millis(100));
 
