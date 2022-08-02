@@ -15,6 +15,7 @@
 use std::io::{Cursor, Read, Write};
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use integer_encoding::{VarInt, VarIntReader, VarIntWriter};
 use smallvec::SmallVec;
 
 use crate::{Entry as CrateEntry, Serializable};
@@ -28,7 +29,7 @@ pub const OBJECT_ID_CHECKPOINT: u8 = 1;
 
 pub const MAX_LEVELS: usize = 256;
 pub const MAX_KEY_SIZE_BYTES: usize = 1024;
-pub const MAX_VALUE_SIZE_BYTES: usize = 65000;
+pub const MAX_VALUE_SIZE_BYTES: usize = 65000; // TODO: change me
 
 pub struct Header {
     pub nb_levels: u8,
@@ -164,8 +165,8 @@ where
         }
 
         output.write_u8(OBJECT_ID_ENTRY)?;
-        output.write_u16::<LittleEndian>(key_size as u16)?;
-        output.write_u16::<LittleEndian>(value_size as u16)?;
+        output.write_varint::<u16>(key_size as u16)?;
+        output.write_varint::<u32>(value_size as u32)?;
 
         if let Some(key_data) = key_data.as_ref() {
             output.write_all(key_data)?;
@@ -193,12 +194,16 @@ where
             return Err(SerializationError::InvalidObjectType);
         }
 
-        let key_size = data_cursor.read_u16::<LittleEndian>()? as usize;
-        let data_size = data_cursor.read_u16::<LittleEndian>()? as usize;
+        let key_size = data_cursor.read_varint::<u16>()? as usize;
+        let data_size = data_cursor.read_varint::<u32>()? as usize;
         let key = <K as Serializable>::deserialize(data_cursor, key_size)?;
         let value = <V as Serializable>::deserialize(data_cursor, data_size)?;
 
-        let entry_file_size = 1 + 2 + 2 + key_size + data_size;
+        let entry_file_size = 1
+            + (key_size as u16).required_space()
+            + (data_size as u16).required_space()
+            + key_size
+            + data_size;
         let entry = CrateEntry { key, value };
         Ok((Entry { entry }, entry_file_size))
     }
@@ -211,8 +216,8 @@ where
             return Err(SerializationError::InvalidObjectType);
         }
 
-        let key_size = data_cursor.read_u16::<LittleEndian>()? as usize;
-        let _data_size = data_cursor.read_u16::<LittleEndian>()? as usize;
+        let key_size = data_cursor.read_varint::<u16>()? as usize;
+        let _data_size = data_cursor.read_varint::<u32>()? as usize;
 
         let key = <K as Serializable>::deserialize(&mut data_cursor, key_size)?;
         Ok(key)
