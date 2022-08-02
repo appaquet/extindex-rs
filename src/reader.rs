@@ -171,6 +171,12 @@ where
         Q: Ord + PartialEq + Eq,
     {
         let last_checkpoint = self.read_checkpoint_and_key(self.last_checkpoint_position)?;
+
+        if needle > last_checkpoint.entry_key.borrow() {
+            // needle is after last checkpoint, so we can't find it
+            return Ok(None);
+        }
+
         let last_checkpoint_find = FindCheckpoint {
             level: 0,
             checkpoint: last_checkpoint,
