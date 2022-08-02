@@ -14,13 +14,13 @@
 
 use std::{borrow::Borrow, fs::File, path::Path};
 
-use crate::{seri, Encodable, Entry};
+use crate::{data, Entry, Serializable};
 
 /// Index reader
 pub struct Reader<K, V>
 where
-    K: Ord + PartialEq + Encodable,
-    V: Encodable,
+    K: Ord + PartialEq + Serializable,
+    V: Serializable,
 {
     _file: File,
     data: memmap2::Mmap,
@@ -31,8 +31,8 @@ where
 
 impl<K, V> Reader<K, V>
 where
-    K: Ord + PartialEq + Encodable,
-    V: Encodable,
+    K: Ord + PartialEq + Serializable,
+    V: Serializable,
 {
     /// Opens an index file built using the Builder at the given path.
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Reader<K, V>, ReaderError> {
@@ -46,7 +46,7 @@ where
             return Err(ReaderError::TooBig);
         }
 
-        if file_meta.len() < seri::Header::size() as u64 {
+        if file_meta.len() < data::Header::size() as u64 {
             error!("Tried to open an index file that is too small to be valid");
             return Err(ReaderError::InvalidFormat);
         }
@@ -54,13 +54,13 @@ where
         let file = File::open(path.as_ref())?;
         let file_mmap = unsafe { memmap2::MmapOptions::new().map(&file)? };
 
-        let (seri_header, _header_size) = seri::Header::read_slice(&file_mmap[..])?;
+        let (seri_header, _header_size) = data::Header::read_slice(&file_mmap[..])?;
         let nb_levels = seri_header.nb_levels as usize;
         if nb_levels == 0 {
             return Err(ReaderError::Empty);
         }
 
-        let last_checkpoint_position = file_mmap.len() - seri::Checkpoint::size(nb_levels);
+        let last_checkpoint_position = file_mmap.len() - data::Checkpoint::size(nb_levels);
 
         Ok(Reader {
             _file: file,
@@ -136,7 +136,7 @@ where
         checkpoint_position: usize,
     ) -> Result<Checkpoint<K>, ReaderError> {
         let (seri_checkpoint, _read_size) =
-            seri::Checkpoint::read_slice(&self.data[checkpoint_position..], self.nb_levels)?;
+            data::Checkpoint::read_slice(&self.data[checkpoint_position..], self.nb_levels)?;
         let next_checkpoints = seri_checkpoint
             .levels
             .iter()
@@ -144,7 +144,7 @@ where
             .collect();
 
         let entry_file_position = seri_checkpoint.entry_position as usize;
-        let entry_key = seri::Entry::<K, V>::read_key(&self.data[entry_file_position..])?;
+        let entry_key = data::Entry::<K, V>::read_key(&self.data[entry_file_position..])?;
 
         Ok(Checkpoint {
             entry_key,
@@ -154,7 +154,7 @@ where
     }
 
     fn read_entry(&self, entry_position: usize) -> Result<FileEntry<K, V>, ReaderError> {
-        let (seri_entry, _read_size) = seri::Entry::read_slice(&self.data[entry_position..])?;
+        let (seri_entry, _read_size) = data::Entry::read_slice(&self.data[entry_position..])?;
         Ok(FileEntry {
             entry: seri_entry.entry,
             position: entry_position,
@@ -224,7 +224,7 @@ where
         &self,
         from_position: Option<usize>,
     ) -> FileEntryIterator<K, V> {
-        let from_position = from_position.unwrap_or_else(seri::Header::size);
+        let from_position = from_position.unwrap_or_else(data::Header::size);
         FileEntryIterator {
             reader: self,
             current_position: from_position,
@@ -248,8 +248,8 @@ where
 /// Iterator over entries of the index.
 struct FileEntryIterator<'reader, K, V>
 where
-    K: Ord + Encodable,
-    V: Encodable,
+    K: Ord + Serializable,
+    V: Serializable,
 {
     reader: &'reader Reader<K, V>,
     current_position: usize,
@@ -257,8 +257,8 @@ where
 
 impl<'reader, K, V> Iterator for FileEntryIterator<'reader, K, V>
 where
-    K: Ord + Encodable,
-    V: Encodable,
+    K: Ord + Serializable,
+    V: Serializable,
 {
     type Item = FileEntry<K, V>;
 
@@ -270,11 +270,11 @@ where
         loop {
             let position = self.current_position;
             let (read_object, read_size) =
-                seri::Object::read(&self.reader.data[position..], self.reader.nb_levels).ok()?;
+                data::Object::read(&self.reader.data[position..], self.reader.nb_levels).ok()?;
             self.current_position += read_size;
             match read_object {
-                seri::Object::Checkpoint(_) => continue,
-                seri::Object::Entry(entry) => {
+                data::Object::Checkpoint(_) => continue,
+                data::Object::Entry(entry) => {
                     return Some(FileEntry {
                         entry: entry.entry,
                         position,
@@ -288,8 +288,8 @@ where
 /// Entry found at a specific position of the index
 struct FileEntry<K, V>
 where
-    K: Ord + Encodable,
-    V: Encodable,
+    K: Ord + Serializable,
+    V: Serializable,
 {
     entry: Entry<K, V>,
     position: usize,
@@ -302,12 +302,12 @@ pub enum ReaderError {
     InvalidItem,
     InvalidFormat,
     Empty,
-    Serialization(seri::SerializationError),
+    Serialization(data::SerializationError),
     IO(std::io::Error),
 }
 
-impl From<seri::SerializationError> for ReaderError {
-    fn from(err: seri::SerializationError) -> Self {
+impl From<data::SerializationError> for ReaderError {
+    fn from(err: data::SerializationError) -> Self {
         ReaderError::Serialization(err)
     }
 }
@@ -321,7 +321,7 @@ impl From<std::io::Error> for ReaderError {
 /// Represents a checkpoint in the index file.
 struct Checkpoint<K>
 where
-    K: Ord + Encodable,
+    K: Ord + Serializable,
 {
     entry_key: K,
     entry_file_position: usize,
@@ -330,7 +330,7 @@ where
 
 struct FindCheckpoint<K>
 where
-    K: Ord + Encodable,
+    K: Ord + Serializable,
 {
     checkpoint: Checkpoint<K>,
     level: usize,

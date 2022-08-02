@@ -18,7 +18,7 @@
 //!
 //! The index allows random lookups and sorted scans. An indexed entry consists
 //! of a key and a value. The key needs to implement `Eq` and `Ord`, and both
-//! the key and values need to implement a `Encodable` trait for serialization
+//! the key and values need to implement a `Serializable` trait for serialization
 //! to and from disk.
 //!
 //! The index is built using a skip list like data structure, but in which
@@ -32,21 +32,21 @@
 //! extern crate extindex;
 //!
 //! use std::io::{Read, Write};
-//! use extindex::{Builder, Encodable, Entry, Reader};
+//! use extindex::{Builder, Serializable, Entry, Reader};
 //!
 //! #[derive(Ord, PartialOrd, Eq, PartialEq, Debug)]
 //! struct TestString(String);
 //!
-//! impl Encodable for TestString {
-//!     fn encoded_size(&self) -> Option<usize> {
+//! impl Serializable for TestString {
+//!     fn size(&self) -> Option<usize> {
 //!         Some(self.0.as_bytes().len())
 //!     }
 //!
-//!     fn encode<W: Write>(&self, write: &mut W) -> Result<(), std::io::Error> {
+//!     fn serialize<W: Write>(&self, write: &mut W) -> Result<(), std::io::Error> {
 //!         write.write_all(self.0.as_bytes()).map(|_| ())
 //!     }
 //!
-//!     fn decode<R: Read>(data: &mut R, size: usize) -> Result<TestString, std::io::Error> {
+//!     fn deserialize<R: Read>(data: &mut R, size: usize) -> Result<TestString, std::io::Error> {
 //!         let mut bytes = vec![0u8; size];
 //!         data.read_exact(&mut bytes)?;
 //!         Ok(TestString(String::from_utf8_lossy(&bytes).to_string()))
@@ -71,17 +71,20 @@ extern crate log;
 
 pub use crate::{
     builder::{Builder, BuilderError},
-    encodable::Encodable,
     entry::Entry,
     reader::{Reader, ReaderError},
+    serializable::Serializable,
 };
 
+#[cfg(feature = "serde")]
+pub use crate::serializable::SerdeWrapper;
+
 pub mod builder;
-pub mod encodable;
 pub mod entry;
 pub mod reader;
+pub mod serializable;
 
-mod seri;
+mod data;
 mod utils;
 
 #[cfg(test)]
@@ -91,16 +94,16 @@ pub mod tests {
     #[derive(Ord, PartialOrd, Eq, PartialEq, Debug)]
     pub struct TestString(pub String);
 
-    impl super::Encodable for TestString {
-        fn encoded_size(&self) -> Option<usize> {
+    impl super::Serializable for TestString {
+        fn size(&self) -> Option<usize> {
             Some(self.0.as_bytes().len())
         }
 
-        fn encode<W: Write>(&self, write: &mut W) -> Result<(), std::io::Error> {
+        fn serialize<W: Write>(&self, write: &mut W) -> Result<(), std::io::Error> {
             write.write_all(self.0.as_bytes()).map(|_| ())
         }
 
-        fn decode<R: Read>(data: &mut R, size: usize) -> Result<TestString, std::io::Error> {
+        fn deserialize<R: Read>(data: &mut R, size: usize) -> Result<TestString, std::io::Error> {
             let mut bytes = vec![0u8; size];
             data.read_exact(&mut bytes)?;
             Ok(TestString(String::from_utf8_lossy(&bytes).to_string()))

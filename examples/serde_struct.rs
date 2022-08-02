@@ -15,7 +15,7 @@
 extern crate extindex;
 extern crate serde;
 
-use extindex::{Builder, Entry, Reader};
+use extindex::{Builder, Entry, Reader, SerdeWrapper};
 
 #[derive(Ord, PartialOrd, Eq, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
 struct SomeStruct {
@@ -29,14 +29,14 @@ fn main() {
     let builder = Builder::new(index_file.path());
     let entries = vec![Entry::new(
         "my_key".to_string(),
-        SomeStruct {
+        SerdeWrapper(SomeStruct {
             a: 123,
             b: "my value".to_string(),
-        },
+        }),
     )];
     builder.build(entries.into_iter()).unwrap();
 
-    let reader = Reader::<String, SomeStruct>::open(index_file).unwrap();
+    let reader = Reader::<String, SerdeWrapper<SomeStruct>>::open(index_file).unwrap();
     assert!(reader.find(&"my_key".to_string()).unwrap().is_some());
     assert!(reader.find(&"notfound".to_string()).unwrap().is_none());
 }
