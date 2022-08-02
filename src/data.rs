@@ -15,6 +15,7 @@
 use std::io::{Cursor, Read, Write};
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use smallvec::SmallVec;
 
 use crate::{Entry as CrateEntry, Serializable};
 
@@ -69,7 +70,7 @@ impl Header {
 
 pub struct Checkpoint {
     pub entry_position: u64,
-    pub levels: Vec<CheckpointLevel>,
+    pub levels: SmallVec<[CheckpointLevel; 10]>,
 }
 
 pub struct CheckpointLevel {
@@ -98,10 +99,8 @@ impl Checkpoint {
             return Err(SerializationError::InvalidObjectType);
         }
 
-        // TODO: Test performance of this heap alloc vs hard coding max size vec on
-        // stack
         let entry_position = checkpoint_cursor.read_u64::<LittleEndian>()?;
-        let mut levels = Vec::with_capacity(nb_levels);
+        let mut levels = SmallVec::new();
         for _i in 0..nb_levels {
             let previous_checkpoint_position = checkpoint_cursor.read_u64::<LittleEndian>()?;
             levels.push(CheckpointLevel {
@@ -293,7 +292,7 @@ mod tests {
 
         let checkpoint = Checkpoint {
             entry_position: 1234,
-            levels: vec![CheckpointLevel {
+            levels: smallvec::smallvec![CheckpointLevel {
                 next_position: 1000,
             }],
         };
@@ -364,7 +363,7 @@ mod tests {
 
         let checkpoint = Checkpoint {
             entry_position: 1234,
-            levels: vec![CheckpointLevel {
+            levels: smallvec::smallvec![CheckpointLevel {
                 next_position: 1000,
             }],
         };
