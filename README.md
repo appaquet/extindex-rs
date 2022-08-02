@@ -9,7 +9,7 @@ then build the index from it.
 
 The index allows random lookups and sorted scans. An indexed entry consists of a key and a value.
 The key needs to implement `Eq` and `Ord`, and both the key and values need to implement a
-`Encodable` trait for serialization to and from disk.
+`Serializable` trait for serialization to and from disk.
 
 The index is built using a skip list like data structure, but in which lookups are starting from
 the end of the index instead of from the beginning. This allow building the index in a single
@@ -19,20 +19,6 @@ checkpoints/nodes ahead in the file.
 # Example <!-- keep in sync with serde_struct.rs  -->
 
 ```rust
-// Copyright 2018 Andre-Philippe Paquet
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 extern crate extindex;
 extern crate serde;
 
