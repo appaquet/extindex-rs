@@ -1,6 +1,5 @@
 extindex
 [![crates.io](https://img.shields.io/crates/v/extindex.svg)](https://crates.io/crates/extindex)
-[![dependency status](https://deps.rs/repo/github/appaquet/extindex-rs/status.svg)](https://deps.rs/repo/github/appaquet/extindex-rs)
 =========
 
 Immutable persisted index (on disk) that can be built in one pass using a sorted iterator, or can
