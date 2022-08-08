@@ -20,7 +20,7 @@ use std::{
 
 use extsort::ExternalSorter;
 
-use crate::{seri, utils::CountedWrite, Encodable, Entry};
+use crate::{data, utils::CountedWrite, Entry, Serializable};
 
 const CHECKPOINT_WRITE_UPCOMING_WITHIN_DISTANCE: u64 = 3;
 const LEVELS_MINIMUM_ITEMS: u64 = 2;
@@ -36,8 +36,8 @@ const LEVELS_MINIMUM_ITEMS: u64 = 2;
 /// checkpoints.
 pub struct Builder<K, V>
 where
-    K: Ord + Encodable,
-    V: Encodable,
+    K: Ord + Serializable,
+    V: Serializable,
 {
     path: PathBuf,
     log_base: f64,
@@ -47,8 +47,8 @@ where
 
 impl<K, V> Builder<K, V>
 where
-    K: Ord + Encodable,
-    V: Encodable,
+    K: Ord + Serializable,
+    V: Serializable,
 {
     /// Creates an index builder that will write to the given file path.
     pub fn new<P: Into<PathBuf>>(path: P) -> Builder<K, V> {
@@ -119,7 +119,7 @@ where
         let mut counted_output = CountedWrite::new(buffered_output);
 
         let mut levels = levels_for_items_count(nb_items, self.log_base);
-        if levels.len() > seri::MAX_LEVELS {
+        if levels.len() > data::MAX_LEVELS {
             return Err(BuilderError::MaxSize);
         }
 
@@ -169,7 +169,7 @@ where
     }
 
     fn write_header<W: Write>(&self, output: &mut W, levels: &[Level]) -> Result<(), BuilderError> {
-        let seri_header = seri::Header {
+        let seri_header = data::Header {
             nb_levels: levels.len() as u8,
         };
         seri_header.write(output)?;
@@ -181,7 +181,7 @@ where
         output: &mut W,
         entry: &Entry<K, V>,
     ) -> Result<(), BuilderError> {
-        seri::Entry::write(entry, output)?;
+        data::Entry::write(entry, output)?;
         Ok(())
     }
 
@@ -195,11 +195,11 @@ where
     ) -> Result<(), BuilderError> {
         let seri_levels = levels
             .iter()
-            .map(|level| seri::CheckpointLevel {
+            .map(|level| data::CheckpointLevel {
                 next_position: level.last_item.unwrap_or(0),
             })
             .collect();
-        let seri_checkpoint = seri::Checkpoint {
+        let seri_checkpoint = data::Checkpoint {
             entry_position,
             levels: seri_levels,
         };
@@ -260,7 +260,7 @@ struct Level {
 pub enum BuilderError {
     MaxSize,
     InvalidItem,
-    Serialization(seri::SerializationError),
+    Serialization(data::SerializationError),
     IO(std::io::Error),
 }
 
@@ -270,8 +270,8 @@ impl From<std::io::Error> for BuilderError {
     }
 }
 
-impl From<seri::SerializationError> for BuilderError {
-    fn from(err: seri::SerializationError) -> Self {
+impl From<data::SerializationError> for BuilderError {
+    fn from(err: data::SerializationError) -> Self {
         BuilderError::Serialization(err)
     }
 }

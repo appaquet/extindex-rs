@@ -19,12 +19,12 @@ use std::{
     time::Duration,
 };
 
-use extindex::{Builder, Encodable, Entry, Reader};
+use extindex::{Builder, Entry, Reader, Serializable};
 
 fn bench_index_builder(c: &mut Criterion) {
     let mut group = c.benchmark_group("Builder");
     group.sample_size(10);
-    group.measurement_time(Duration::from_secs(7));
+    group.measurement_time(Duration::from_secs(9));
     group.sampling_mode(criterion::SamplingMode::Flat);
     group.warm_up_time(Duration::from_millis(100));
 
@@ -110,16 +110,16 @@ fn create_unknown_size_entries(
 #[derive(Ord, PartialOrd, Eq, PartialEq, Debug)]
 struct SizedString(String);
 
-impl Encodable for SizedString {
-    fn encoded_size(&self) -> Option<usize> {
+impl Serializable for SizedString {
+    fn size(&self) -> Option<usize> {
         Some(self.0.as_bytes().len())
     }
 
-    fn encode<W: Write>(&self, write: &mut W) -> Result<(), std::io::Error> {
+    fn serialize<W: Write>(&self, write: &mut W) -> Result<(), std::io::Error> {
         write.write_all(self.0.as_bytes()).map(|_| ())
     }
 
-    fn decode<R: Read>(data: &mut R, size: usize) -> Result<SizedString, std::io::Error> {
+    fn deserialize<R: Read>(data: &mut R, size: usize) -> Result<SizedString, std::io::Error> {
         let mut bytes = vec![0u8; size];
         data.read_exact(&mut bytes)?;
         Ok(SizedString(String::from_utf8_lossy(&bytes).to_string()))
@@ -135,16 +135,16 @@ impl std::fmt::Display for SizedString {
 #[derive(Ord, PartialOrd, Eq, PartialEq, Debug)]
 pub struct UnsizedString(pub String);
 
-impl Encodable for UnsizedString {
-    fn encoded_size(&self) -> Option<usize> {
+impl Serializable for UnsizedString {
+    fn size(&self) -> Option<usize> {
         None
     }
 
-    fn encode<W: Write>(&self, write: &mut W) -> Result<(), std::io::Error> {
+    fn serialize<W: Write>(&self, write: &mut W) -> Result<(), std::io::Error> {
         write.write_all(self.0.as_bytes()).map(|_| ())
     }
 
-    fn decode<R: Read>(data: &mut R, size: usize) -> Result<UnsizedString, std::io::Error> {
+    fn deserialize<R: Read>(data: &mut R, size: usize) -> Result<UnsizedString, std::io::Error> {
         let mut bytes = vec![0u8; size];
         data.read_exact(&mut bytes)?;
         Ok(UnsizedString(String::from_utf8_lossy(&bytes).to_string()))

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use extindex::{Builder, Entry, Reader};
+use extindex::{Builder, Entry, Reader, SerdeWrapper};
 
 #[test]
 fn build_and_read_unique_key() {
@@ -171,14 +171,14 @@ fn test_serde_struct() {
     let builder = Builder::new(index_file.path());
     let entries = vec![Entry::new(
         "my_key".to_string(),
-        SerdeStruct {
+        SerdeWrapper(SerdeStruct {
             a: 123,
             b: "my value".to_string(),
-        },
+        }),
     )];
     builder.build(entries.into_iter()).unwrap();
 
-    let reader = Reader::<String, SerdeStruct>::open(index_file).unwrap();
+    let reader = Reader::<String, SerdeWrapper<SerdeStruct>>::open(index_file).unwrap();
     assert!(reader.find(&"my_key".to_string()).unwrap().is_some());
     assert!(reader.find(&"notfound".to_string()).unwrap().is_none());
 }

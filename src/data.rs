@@ -15,8 +15,9 @@
 use std::io::{Cursor, Read, Write};
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use smallvec::SmallVec;
 
-use crate::{Encodable, Entry as CrateEntry};
+use crate::{Entry as CrateEntry, Serializable};
 
 const INDEX_FILE_MAGIC_HEADER_SIZE: usize = 2;
 const INDEX_FILE_MAGIC_HEADER: [u8; INDEX_FILE_MAGIC_HEADER_SIZE] = [40, 12];
@@ -69,7 +70,7 @@ impl Header {
 
 pub struct Checkpoint {
     pub entry_position: u64,
-    pub levels: Vec<CheckpointLevel>,
+    pub levels: SmallVec<[CheckpointLevel; 10]>,
 }
 
 pub struct CheckpointLevel {
@@ -98,10 +99,8 @@ impl Checkpoint {
             return Err(SerializationError::InvalidObjectType);
         }
 
-        // TODO: Test performance of this heap alloc vs hard coding max size vec on
-        // stack
         let entry_position = checkpoint_cursor.read_u64::<LittleEndian>()?;
-        let mut levels = Vec::with_capacity(nb_levels);
+        let mut levels = SmallVec::new();
         for _i in 0..nb_levels {
             let previous_checkpoint_position = checkpoint_cursor.read_u64::<LittleEndian>()?;
             levels.push(CheckpointLevel {
@@ -127,35 +126,35 @@ impl Checkpoint {
 
 pub struct Entry<K, V>
 where
-    K: Ord + Encodable,
-    V: Encodable,
+    K: Ord + Serializable,
+    V: Serializable,
 {
     pub entry: CrateEntry<K, V>,
 }
 
 impl<K, V> Entry<K, V>
 where
-    K: Ord + Encodable,
-    V: Encodable,
+    K: Ord + Serializable,
+    V: Serializable,
 {
     pub fn write<W: Write>(
         entry: &CrateEntry<K, V>,
         output: &mut W,
     ) -> Result<(), SerializationError> {
-        let (key_size, key_data) = match entry.key.encoded_size() {
+        let (key_size, key_data) = match entry.key.size() {
             Some(size) => (size, None),
             None => {
                 let mut buffer = Vec::new();
-                entry.key.encode(&mut buffer)?;
+                entry.key.serialize(&mut buffer)?;
                 (buffer.len(), Some(buffer))
             }
         };
 
-        let (value_size, value_data) = match entry.value.encoded_size() {
+        let (value_size, value_data) = match entry.value.size() {
             Some(size) => (size, None),
             None => {
                 let mut buffer = Vec::new();
-                entry.value.encode(&mut buffer)?;
+                entry.value.serialize(&mut buffer)?;
                 (buffer.len(), Some(buffer))
             }
         };
@@ -171,13 +170,13 @@ where
         if let Some(key_data) = key_data.as_ref() {
             output.write_all(key_data)?;
         } else {
-            entry.key.encode(output)?;
+            entry.key.serialize(output)?;
         }
 
         if let Some(value_data) = value_data.as_ref() {
             output.write_all(value_data)?;
         } else {
-            entry.value.encode(output)?;
+            entry.value.serialize(output)?;
         }
 
         Ok(())
@@ -196,8 +195,8 @@ where
 
         let key_size = data_cursor.read_u16::<LittleEndian>()? as usize;
         let data_size = data_cursor.read_u16::<LittleEndian>()? as usize;
-        let key = <K as Encodable>::decode(data_cursor, key_size)?;
-        let value = <V as Encodable>::decode(data_cursor, data_size)?;
+        let key = <K as Serializable>::deserialize(data_cursor, key_size)?;
+        let value = <V as Serializable>::deserialize(data_cursor, data_size)?;
 
         let entry_file_size = 1 + 2 + 2 + key_size + data_size;
         let entry = CrateEntry { key, value };
@@ -215,15 +214,15 @@ where
         let key_size = data_cursor.read_u16::<LittleEndian>()? as usize;
         let _data_size = data_cursor.read_u16::<LittleEndian>()? as usize;
 
-        let key = <K as Encodable>::decode(&mut data_cursor, key_size)?;
+        let key = <K as Serializable>::deserialize(&mut data_cursor, key_size)?;
         Ok(key)
     }
 }
 
 pub enum Object<K, V>
 where
-    K: Ord + Encodable,
-    V: Encodable,
+    K: Ord + Serializable,
+    V: Serializable,
 {
     Entry(Entry<K, V>),
     Checkpoint(Checkpoint),
@@ -231,8 +230,8 @@ where
 
 impl<K, V> Object<K, V>
 where
-    K: Ord + Encodable,
-    V: Encodable,
+    K: Ord + Serializable,
+    V: Serializable,
 {
     pub fn read(
         data: &[u8],
@@ -293,7 +292,7 @@ mod tests {
 
         let checkpoint = Checkpoint {
             entry_position: 1234,
-            levels: vec![CheckpointLevel {
+            levels: smallvec::smallvec![CheckpointLevel {
                 next_position: 1000,
             }],
         };
@@ -364,7 +363,7 @@ mod tests {
 
         let checkpoint = Checkpoint {
             entry_position: 1234,
-            levels: vec![CheckpointLevel {
+            levels: smallvec::smallvec![CheckpointLevel {
                 next_position: 1000,
             }],
         };
@@ -410,16 +409,19 @@ mod tests {
     #[derive(Ord, PartialOrd, Eq, PartialEq, Debug)]
     pub struct UnsizedString(pub String);
 
-    impl super::Encodable for UnsizedString {
-        fn encoded_size(&self) -> Option<usize> {
+    impl super::Serializable for UnsizedString {
+        fn size(&self) -> Option<usize> {
             None
         }
 
-        fn encode<W: Write>(&self, write: &mut W) -> Result<(), std::io::Error> {
+        fn serialize<W: Write>(&self, write: &mut W) -> Result<(), std::io::Error> {
             write.write_all(self.0.as_bytes()).map(|_| ())
         }
 
-        fn decode<R: Read>(data: &mut R, size: usize) -> Result<UnsizedString, std::io::Error> {
+        fn deserialize<R: Read>(
+            data: &mut R,
+            size: usize,
+        ) -> Result<UnsizedString, std::io::Error> {
             let mut bytes = vec![0u8; size];
             data.read_exact(&mut bytes)?;
             Ok(UnsizedString(String::from_utf8_lossy(&bytes).to_string()))
