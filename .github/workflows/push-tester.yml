@@ -17,7 +17,7 @@ jobs:
           profile: minimal
           components: rustfmt, clippy
 
-      - uses: Swatinem/rust-cache@v1
+      - uses: Swatinem/rust-cache@v2
 
       - name: Check formatting
         uses: actions-rs/cargo@v1.0.3
@@ -55,7 +55,7 @@ jobs:
           toolchain: stable
           profile: minimal
 
-      - uses: Swatinem/rust-cache@v1
+      - uses: Swatinem/rust-cache@v2
 
       - name: Tests
         uses: actions-rs/cargo@v1.0.3
