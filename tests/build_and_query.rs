@@ -159,6 +159,25 @@ fn reader_iter_unique_key() {
 }
 
 #[test]
+fn reader_reverse_iter() {
+    let index_file = tempfile::NamedTempFile::new().unwrap();
+
+    let builder = Builder::new(index_file.path());
+    builder.build(create_entries(1_000, "")).unwrap();
+
+    let mut expected_keys: Vec<String> = create_entries(1_000, "")
+        .map(|entry| entry.key().clone())
+        .collect();
+    expected_keys.sort();
+    expected_keys.reverse();
+
+    let reader = Reader::<String, String>::open(index_file.path()).unwrap();
+    for (found_item, expected_key) in reader.iter_reverse().zip(expected_keys) {
+        assert_eq!(found_item.key(), &expected_key);
+    }
+}
+
+#[test]
 fn test_serde_struct() {
     #[derive(Ord, PartialOrd, Eq, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
     struct SerdeStruct {

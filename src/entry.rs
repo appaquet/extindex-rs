@@ -65,7 +65,7 @@ where
     V: Serializable,
 {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.key.partial_cmp(&other.key)
+        Some(self.cmp(other))
     }
 }
 

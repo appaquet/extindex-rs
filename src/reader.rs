@@ -14,7 +14,10 @@
 
 use std::{borrow::Borrow, fs::File, path::Path};
 
-use crate::{data, Entry, Serializable};
+use crate::{
+    data::{self},
+    Entry, Serializable,
+};
 
 /// Index reader
 pub struct Reader<K, V>
@@ -106,6 +109,13 @@ where
             .map(|file_entry| file_entry.entry)
     }
 
+    /// Returns an iterator that iterates from the end of the index to the
+    /// index of the index.
+    pub fn iter_reverse(&self) -> impl Iterator<Item = Entry<K, V>> + '_ {
+        self.reverse_iterate_entries_from_position(None)
+            .map(|file_entry| file_entry.entry)
+    }
+
     /// Returns an iterator that iterates from the given needle.
     ///
     /// Warning: Make sure that you sort by key + value and use stable sorting
@@ -159,6 +169,31 @@ where
             entry: seri_entry.entry,
             position: entry_position,
         })
+    }
+
+    fn find_next_checkpoint_from_position(
+        &self,
+        from_position: usize,
+    ) -> Result<Option<Checkpoint<K>>, ReaderError> {
+        let mut from_position = from_position;
+
+        loop {
+            let (objects, read_size) =
+                data::Object::<K, V>::read(&self.data[from_position..], self.nb_levels)?;
+
+            match objects {
+                data::Object::Checkpoint(_) => {
+                    return self.read_checkpoint_and_key(from_position).map(Some);
+                }
+                data::Object::Entry(_) => {
+                    from_position += read_size;
+                }
+            }
+
+            if from_position >= self.last_checkpoint_position {
+                return Ok(None);
+            }
+        }
     }
 
     fn find_entry_position<Q: ?Sized>(
@@ -237,6 +272,23 @@ where
         }
     }
 
+    fn reverse_iterate_entries_from_position(
+        &self,
+        from_position: Option<usize>,
+    ) -> ReverseFileEntryIterator<K, V> {
+        let from_position = from_position.unwrap_or(self.last_checkpoint_position);
+        let next_checkpoint = self
+            .find_next_checkpoint_from_position(from_position)
+            .ok()
+            .flatten();
+
+        let mut iter = ReverseFileEntryIterator::new(self, next_checkpoint);
+
+        iter.pop_to_before_position(from_position);
+
+        iter
+    }
+
     fn sequential_find_entry<Q: ?Sized>(
         &self,
         from_position: Option<usize>,
@@ -292,6 +344,95 @@ where
     }
 }
 
+/// Reverse iterator over entries of the index.
+struct ReverseFileEntryIterator<'reader, K, V>
+where
+    K: Ord + Serializable,
+    V: Serializable,
+{
+    reader: &'reader Reader<K, V>,
+    checkpoint: Option<Checkpoint<K>>, // next checkpoint
+    entries: Vec<FileEntry<K, V>>,     // entries between prev and next checkpoint
+}
+
+impl<'reader, K, V> ReverseFileEntryIterator<'reader, K, V>
+where
+    K: Ord + Serializable,
+    V: Serializable,
+{
+    fn new(reader: &'reader Reader<K, V>, checkpoint: Option<Checkpoint<K>>) -> Self {
+        let mut iter = ReverseFileEntryIterator {
+            reader,
+            checkpoint,
+            entries: Vec::new(),
+        };
+
+        iter.load_entries();
+
+        iter
+    }
+
+    fn load_entries(&mut self) {
+        let Some(next_checkpoint) = self.checkpoint.take() else {
+            return;
+        };
+
+        let prev_checkpoint = next_checkpoint
+            .next_checkpoints
+            .last()
+            .expect("expected checkpoint on last level");
+        if *prev_checkpoint == 0 {
+            // we are now at the beginning of the file, we are done
+            return;
+        }
+
+        for entry in self
+            .reader
+            .iterate_entries_from_position(Some(*prev_checkpoint))
+        {
+            if entry.position > next_checkpoint.entry_file_position {
+                break;
+            }
+
+            self.entries.push(entry);
+        }
+
+        self.checkpoint = self.reader.read_checkpoint_and_key(*prev_checkpoint).ok();
+    }
+
+    // Pop any entries that are after the given position
+    fn pop_to_before_position(&mut self, position: usize) {
+        while let Some(entry) = self.entries.last() {
+            if entry.position <= position {
+                break;
+            }
+
+            self.entries.pop();
+        }
+    }
+}
+
+impl<'reader, K, V> Iterator for ReverseFileEntryIterator<'reader, K, V>
+where
+    K: Ord + Serializable,
+    V: Serializable,
+{
+    type Item = FileEntry<K, V>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let _ = self.checkpoint.as_ref()?;
+
+        if self.entries.is_empty() {
+            self.load_entries();
+            if self.entries.is_empty() {
+                return None;
+            }
+        }
+
+        self.entries.pop()
+    }
+}
+
 /// Entry found at a specific position of the index
 struct FileEntry<K, V>
 where
@@ -335,6 +476,7 @@ where
     next_checkpoints: Vec<usize>,
 }
 
+/// Checkpoint struct used when finding an entry in the index.
 struct FindCheckpoint<K>
 where
     K: Ord + Serializable,

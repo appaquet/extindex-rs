@@ -191,7 +191,7 @@ where
         current_position: u64,
         entry_position: u64,
         levels: &mut [Level],
-        force_write: bool,
+        force_all_levels: bool,
     ) -> Result<(), BuilderError> {
         let seri_levels = levels
             .iter()
@@ -206,7 +206,7 @@ where
         seri_checkpoint.write(output)?;
 
         for level in levels.iter_mut() {
-            if force_write
+            if force_all_levels
                 || level.current_items > level.expected_items
                 || (level.expected_items - level.current_items)
                     <= CHECKPOINT_WRITE_UPCOMING_WITHIN_DISTANCE
