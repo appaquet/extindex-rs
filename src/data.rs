@@ -30,6 +30,10 @@ pub const MAX_LEVELS: usize = 256;
 pub const MAX_KEY_SIZE_BYTES: usize = 1024;
 pub const MAX_VALUE_SIZE_BYTES: usize = 65000;
 
+/// Header of the index.
+///
+/// It contains magic header, index version and number of levels
+/// that the index contains.
 pub struct Header {
     pub nb_levels: u8,
 }
@@ -68,6 +72,48 @@ impl Header {
     }
 }
 
+/// Object of the index, that can be either a key-value entry or a checkpoint.
+pub enum Object<K, V>
+where
+    K: Ord + Serializable,
+    V: Serializable,
+{
+    Entry(Entry<K, V>),
+    Checkpoint(Checkpoint),
+}
+
+impl<K, V> Object<K, V>
+where
+    K: Ord + Serializable,
+    V: Serializable,
+{
+    pub fn read(
+        data: &[u8],
+        nb_levels: usize,
+    ) -> Result<(Object<K, V>, usize), SerializationError> {
+        if data.is_empty() {
+            return Err(SerializationError::OutOfBound);
+        }
+
+        if data[0] == OBJECT_ID_CHECKPOINT {
+            let (chk, size) = Checkpoint::read_slice(data, nb_levels)?;
+            Ok((Object::Checkpoint(chk), size))
+        } else if data[0] == OBJECT_ID_ENTRY {
+            let (entry, size) = Entry::read_slice(data)?;
+            Ok((Object::Entry(entry), size))
+        } else {
+            Err(SerializationError::InvalidObjectType)
+        }
+    }
+}
+
+/// Checkpoint of the index, which is always written after an entry.
+///
+/// It contains the position of the entry preceding the checkpoint and the
+/// positions of all the previous checkpoints for each level of the index.    
+///
+/// There is always at least 1 level, and the last one is the more granular. The
+/// highest the level, the bigger the jumps are in the index.
 pub struct Checkpoint {
     pub entry_position: u64,
     pub levels: SmallVec<[CheckpointLevel; 10]>,
@@ -124,6 +170,7 @@ impl Checkpoint {
     }
 }
 
+/// Key-value entry of the index.
 pub struct Entry<K, V>
 where
     K: Ord + Serializable,
@@ -216,40 +263,6 @@ where
 
         let key = <K as Serializable>::deserialize(&mut data_cursor, key_size)?;
         Ok(key)
-    }
-}
-
-pub enum Object<K, V>
-where
-    K: Ord + Serializable,
-    V: Serializable,
-{
-    Entry(Entry<K, V>),
-    Checkpoint(Checkpoint),
-}
-
-impl<K, V> Object<K, V>
-where
-    K: Ord + Serializable,
-    V: Serializable,
-{
-    pub fn read(
-        data: &[u8],
-        nb_levels: usize,
-    ) -> Result<(Object<K, V>, usize), SerializationError> {
-        if data.is_empty() {
-            return Err(SerializationError::OutOfBound);
-        }
-
-        if data[0] == OBJECT_ID_CHECKPOINT {
-            let (chk, size) = Checkpoint::read_slice(data, nb_levels)?;
-            Ok((Object::Checkpoint(chk), size))
-        } else if data[0] == OBJECT_ID_ENTRY {
-            let (entry, size) = Entry::read_slice(data)?;
-            Ok((Object::Entry(entry), size))
-        } else {
-            Err(SerializationError::InvalidObjectType)
-        }
     }
 }
 

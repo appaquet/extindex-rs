@@ -22,7 +22,7 @@ use extsort::ExternalSorter;
 
 use crate::{data, utils::CountedWrite, Entry, Serializable};
 
-const CHECKPOINT_WRITE_UPCOMING_WITHIN_DISTANCE: u64 = 3;
+const CHECKPOINT_WRITE_UPCOMING_WITHIN_DISTANCE: u64 = 3; // write checkpoint if we are within 3 items of the expected items
 const LEVELS_MINIMUM_ITEMS: u64 = 2;
 
 /// Index builder that creates a file index from any iterator. If the given
@@ -154,6 +154,7 @@ where
             }
 
             if entries_since_last_checkpoint > 0 {
+                // write one last checkpoint
                 let current_position = counted_output.written_count();
                 self.write_checkpoint(
                     &mut counted_output,
@@ -191,7 +192,7 @@ where
         current_position: u64,
         entry_position: u64,
         levels: &mut [Level],
-        force_write: bool,
+        force_all_levels: bool,
     ) -> Result<(), BuilderError> {
         let seri_levels = levels
             .iter()
@@ -206,7 +207,7 @@ where
         seri_checkpoint.write(output)?;
 
         for level in levels.iter_mut() {
-            if force_write
+            if force_all_levels
                 || level.current_items > level.expected_items
                 || (level.expected_items - level.current_items)
                     <= CHECKPOINT_WRITE_UPCOMING_WITHIN_DISTANCE
