@@ -107,10 +107,10 @@ where
     }
 }
 
-/// Checkpoint of the index that precedes an entry.
+/// Checkpoint of the index that always follows an entry.
 ///
-/// It contains the position of the next entry and the positions of all the
-/// previous checkpoints for each level of the index.    
+/// It contains the position of the entry preceding the checkpoint and the
+/// positions of all the previous checkpoints for each level of the index.    
 ///
 /// There is always at least 1 level, and the last one is the more granular. The
 /// highest the level, the bigger the jumps are in the index.
