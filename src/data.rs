@@ -107,7 +107,7 @@ where
     }
 }
 
-/// Checkpoint of the index that always follows an entry.
+/// Checkpoint of the index, which is always written after an entry.
 ///
 /// It contains the position of the entry preceding the checkpoint and the
 /// positions of all the previous checkpoints for each level of the index.    

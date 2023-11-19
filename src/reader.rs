@@ -110,7 +110,7 @@ where
     }
 
     /// Returns an iterator that iterates from the end of the index to the
-    /// index of the index.
+    /// beginning of the index.
     pub fn iter_reverse(&self) -> impl Iterator<Item = Entry<K, V>> + '_ {
         self.reverse_iterate_entries_from_position(None)
             .map(|file_entry| file_entry.entry)
@@ -345,6 +345,11 @@ where
 }
 
 /// Reverse iterator over entries of the index.
+///
+/// It works by loading all entries prior to a checkpoint, and then returning
+/// them in reverse order. Then when they have all been yielded, it loads the
+/// next checkpoint (which is at an earlier position in the file), and repeats
+/// the process.
 struct ReverseFileEntryIterator<'reader, K, V>
 where
     K: Ord + Serializable,
@@ -380,15 +385,16 @@ where
         let prev_checkpoint = next_checkpoint
             .next_checkpoints
             .last()
-            .expect("expected checkpoint on last level");
-        if *prev_checkpoint == 0 {
+            .map(|pos| *pos)
+            .unwrap_or_default();
+        if prev_checkpoint == 0 {
             // we are now at the beginning of the file, we are done
             return;
         }
 
         for entry in self
             .reader
-            .iterate_entries_from_position(Some(*prev_checkpoint))
+            .iterate_entries_from_position(Some(prev_checkpoint))
         {
             if entry.position > next_checkpoint.entry_file_position {
                 break;
@@ -397,10 +403,12 @@ where
             self.entries.push(entry);
         }
 
-        self.checkpoint = self.reader.read_checkpoint_and_key(*prev_checkpoint).ok();
+        self.checkpoint = self.reader.read_checkpoint_and_key(prev_checkpoint).ok();
     }
 
-    // Pop any entries that are after the given position
+    // Pop any entries that are after the given position.
+    //
+    // This is used when we are skipping from a specified position.
     fn pop_to_before_position(&mut self, position: usize) {
         while let Some(entry) = self.entries.last() {
             if entry.position <= position {
