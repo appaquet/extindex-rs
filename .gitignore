@@ -3,3 +3,5 @@
 Cargo.lock
 lcov.info
 .vscode
+perf.*
+flamegraph.svg
