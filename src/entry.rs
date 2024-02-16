@@ -32,6 +32,10 @@ where
     pub fn value(&self) -> &V {
         &self.value
     }
+
+    pub fn into_inner(self) -> (K, V) {
+        (self.key, self.value)
+    }
 }
 
 impl<K, V> Sortable for Entry<K, V>
@@ -84,4 +88,17 @@ where
     K: Ord + Serializable,
     V: Serializable,
 {
+}
+
+impl<K: std::fmt::Debug, V: std::fmt::Debug> std::fmt::Debug for Entry<K, V>
+where
+    K: Ord + Serializable,
+    V: Serializable,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Entry")
+            .field("key", &self.key)
+            .field("value", &self.value)
+            .finish()
+    }
 }

@@ -385,7 +385,7 @@ where
         let prev_checkpoint = next_checkpoint
             .next_checkpoints
             .last()
-            .map(|pos| *pos)
+            .copied()
             .unwrap_or_default();
         if prev_checkpoint == 0 {
             // we are now at the beginning of the file, we are done
