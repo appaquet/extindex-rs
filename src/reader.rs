@@ -28,7 +28,7 @@ where
     _file: File,
     data: memmap2::Mmap,
     nb_levels: usize,
-    last_checkpoint_position: usize,
+    last_checkpoint_position: Option<usize>, // if none, index is empty
     phantom: std::marker::PhantomData<(K, V)>,
 }
 
@@ -59,11 +59,12 @@ where
 
         let (seri_header, _header_size) = data::Header::read_slice(&file_mmap[..])?;
         let nb_levels = seri_header.nb_levels as usize;
-        if nb_levels == 0 {
-            return Err(ReaderError::Empty);
-        }
 
-        let last_checkpoint_position = file_mmap.len() - data::Checkpoint::size(nb_levels);
+        let last_checkpoint_position = if nb_levels > 0 {
+            Some(file_mmap.len() - data::Checkpoint::size(nb_levels))
+        } else {
+            None
+        };
 
         Ok(Reader {
             _file: file,
@@ -175,6 +176,10 @@ where
         &self,
         from_position: usize,
     ) -> Result<Option<Checkpoint<K>>, ReaderError> {
+        let Some(last_checkpoint_position) = self.last_checkpoint_position else {
+            return Ok(None);
+        };
+
         let mut from_position = from_position;
 
         loop {
@@ -190,7 +195,7 @@ where
                 }
             }
 
-            if from_position >= self.last_checkpoint_position {
+            if from_position >= last_checkpoint_position {
                 return Ok(None);
             }
         }
@@ -205,7 +210,11 @@ where
         K: Borrow<Q>,
         Q: Ord + PartialEq + Eq,
     {
-        let last_checkpoint = self.read_checkpoint_and_key(self.last_checkpoint_position)?;
+        let Some(last_checkpoint_position) = self.last_checkpoint_position else {
+            return Ok(None);
+        };
+
+        let last_checkpoint = self.read_checkpoint_and_key(last_checkpoint_position)?;
 
         if needle > last_checkpoint.entry_key.borrow() {
             // needle is after last checkpoint, so we can't find it
@@ -276,15 +285,24 @@ where
         &self,
         from_position: Option<usize>,
     ) -> ReverseFileEntryIterator<K, V> {
-        let from_position = from_position.unwrap_or(self.last_checkpoint_position);
-        let next_checkpoint = self
-            .find_next_checkpoint_from_position(from_position)
-            .ok()
-            .flatten();
+        let (next_checkpoint, from_position) =
+            if let Some(last_checkpoint_position) = self.last_checkpoint_position {
+                let from_position = from_position.unwrap_or(last_checkpoint_position);
+                let next_checkpoint = self
+                    .find_next_checkpoint_from_position(from_position)
+                    .ok()
+                    .flatten();
+
+                (next_checkpoint, Some(from_position))
+            } else {
+                (None, None)
+            };
 
         let mut iter = ReverseFileEntryIterator::new(self, next_checkpoint);
 
-        iter.pop_to_before_position(from_position);
+        if let Some(from_position) = from_position {
+            iter.pop_to_before_position(from_position);
+        }
 
         iter
     }
@@ -457,7 +475,6 @@ pub enum ReaderError {
     TooBig,
     InvalidItem,
     InvalidFormat,
-    Empty,
     Serialization(data::SerializationError),
     IO(std::io::Error),
 }

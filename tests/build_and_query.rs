@@ -98,10 +98,13 @@ fn empty_index() {
     let builder = Builder::new(index_file.path());
     builder.build(create_entries(0, "")).unwrap();
 
-    match Reader::<String, String>::open(index_file.path()).err() {
-        Some(extindex::reader::ReaderError::Empty) => {}
-        _ => panic!("Unexpected return"),
-    }
+    let index = Reader::<String, String>::open(index_file.path()).unwrap();
+
+    assert_eq!(index.iter().count(), 0);
+    assert_eq!(index.iter_reverse().count(), 0);
+    assert_eq!(index.iter_from("key").unwrap().count(), 0);
+    assert_eq!(index.find("key").unwrap(), None);
+    assert_eq!(index.find_first("key").unwrap(), None);
 }
 
 #[test]
