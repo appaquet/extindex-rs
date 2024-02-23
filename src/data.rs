@@ -281,6 +281,15 @@ impl From<std::io::Error> for SerializationError {
     }
 }
 
+impl SerializationError {
+    pub fn into_io(self) -> std::io::Error {
+        match self {
+            SerializationError::IO(err) => err,
+            other => std::io::Error::new(std::io::ErrorKind::Other, format!("{other:?}")),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

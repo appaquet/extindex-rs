@@ -101,13 +101,22 @@ where
         let sorted_iter = sorter.sort(iter)?;
         let sorted_count = sorted_iter.sorted_count();
 
-        self.build_from_sorted(sorted_iter, sorted_count)
+        // TODO: Delete temp file. Is it safe though?
+
+        self.build_from_sorted_fallible(sorted_iter, sorted_count)
     }
 
-    /// Builds the index using a sorted iterator.
     pub fn build_from_sorted<I>(self, iter: I, nb_items: u64) -> Result<(), BuilderError>
     where
         I: Iterator<Item = Entry<K, V>>,
+    {
+        self.build_from_sorted_fallible(iter.map(Ok), nb_items)
+    }
+
+    /// Builds the index using a sorted iterator.
+    pub fn build_from_sorted_fallible<I>(self, iter: I, nb_items: u64) -> Result<(), BuilderError>
+    where
+        I: Iterator<Item = std::io::Result<Entry<K, V>>>,
     {
         let file = OpenOptions::new()
             .create(true)
@@ -132,6 +141,8 @@ where
             let mut entries_since_last_checkpoint = 0;
             let mut last_entry_position: u64 = 0;
             for entry in iter {
+                let entry = entry?;
+
                 last_entry_position = counted_output.written_count();
                 self.write_entry(&mut counted_output, &entry)?;
                 entries_since_last_checkpoint += 1;

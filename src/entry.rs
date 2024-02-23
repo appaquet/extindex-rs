@@ -43,13 +43,14 @@ where
     K: Ord + Serializable,
     V: Serializable,
 {
-    fn encode<W: Write>(&self, output: &mut W) {
-        let _ = data::Entry::write(self, output);
+    fn encode<W: Write>(&self, output: &mut W) -> std::io::Result<()> {
+        data::Entry::write(self, output).map_err(|err| err.into_io())?;
+        Ok(())
     }
 
-    fn decode<R: Read>(read: &mut R) -> Option<Entry<K, V>> {
-        let (entry, _read_size) = data::Entry::read(read).ok()?;
-        Some(entry.entry)
+    fn decode<R: Read>(read: &mut R) -> std::io::Result<Entry<K, V>> {
+        let (entry, _read_size) = data::Entry::read(read).map_err(|err| err.into_io())?;
+        Ok(entry.entry)
     }
 }
 
