@@ -19,7 +19,7 @@ serde = ["dep:serde", "bincode"]
 [dependencies]
 bincode = { version = "2.0.0-rc.3", features = ["serde"], optional = true }
 byteorder = "1.5"
-extsort = { path = "../extsort" }
+extsort = { git = "https://github.com/appaquet/extsort-rs.git", branch = "updates" }
 # extsort = "0.4"
 log = "0.4"
 memmap2 = "0.9"
