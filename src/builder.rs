@@ -89,8 +89,8 @@ where
     where
         I: Iterator<Item = Entry<K, V>>,
     {
-        let sort_dir = self.path.with_extension("tmp_sort");
-        std::fs::create_dir_all(&sort_dir)?;
+        let sort_dir = self.sort_dir();
+        std::fs::create_dir_all(&sort_dir).expect("couldn't create dit");
 
         let mut sorter = ExternalSorter::new().with_sort_dir(sort_dir);
 
@@ -100,8 +100,6 @@ where
 
         let sorted_iter = sorter.sort(iter)?;
         let sorted_count = sorted_iter.sorted_count();
-
-        // TODO: Delete temp file. Is it safe though?
 
         self.build_from_sorted_fallible(sorted_iter, sorted_count)
     }
@@ -177,6 +175,8 @@ where
             }
         }
 
+        std::fs::remove_dir_all(self.sort_dir())?;
+
         Ok(())
     }
 
@@ -229,6 +229,14 @@ where
         }
 
         Ok(())
+    }
+
+    /// Returns the directory path where the sorted file will be written.
+    ///
+    /// The directory name will be the same as the index file with an additional
+    /// `.tmp_sort` extension.
+    fn sort_dir(&self) -> PathBuf {
+        self.path.with_extension("tmp_sort")
     }
 }
 
