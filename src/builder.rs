@@ -175,7 +175,7 @@ where
             }
         }
 
-        std::fs::remove_dir_all(self.sort_dir())?;
+        let _ = std::fs::remove_dir_all(self.sort_dir());
 
         Ok(())
     }
