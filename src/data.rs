@@ -21,7 +21,7 @@ use crate::{Entry as CrateEntry, Serializable};
 
 const INDEX_FILE_MAGIC_HEADER_SIZE: usize = 2;
 const INDEX_FILE_MAGIC_HEADER: [u8; INDEX_FILE_MAGIC_HEADER_SIZE] = [40, 12];
-const INDEX_FILE_VERSION: u8 = 0;
+const INDEX_FILE_VERSION: u8 = 1;
 
 pub const OBJECT_ID_ENTRY: u8 = 0;
 pub const OBJECT_ID_CHECKPOINT: u8 = 1;
@@ -212,7 +212,7 @@ where
 
         output.write_u8(OBJECT_ID_ENTRY)?;
         output.write_u16::<LittleEndian>(key_size as u16)?;
-        output.write_u16::<LittleEndian>(value_size as u16)?;
+        output.write_u24::<LittleEndian>(value_size as u32)?;
 
         if let Some(key_data) = key_data.as_ref() {
             output.write_all(key_data)?;
@@ -241,11 +241,13 @@ where
         }
 
         let key_size = data_cursor.read_u16::<LittleEndian>()? as usize;
-        let data_size = data_cursor.read_u16::<LittleEndian>()? as usize;
+        let data_size = data_cursor.read_u24::<LittleEndian>()? as usize;
         let key = <K as Serializable>::deserialize(data_cursor, key_size)?;
         let value = <V as Serializable>::deserialize(data_cursor, data_size)?;
 
-        let entry_file_size = 1 + 2 + 2 + key_size + data_size;
+        let entry_file_size = 1 + // obj id
+            2 + 3 +  // key and value size bytes
+            key_size + data_size;
         let entry = CrateEntry { key, value };
         Ok((Entry { entry }, entry_file_size))
     }
@@ -259,7 +261,7 @@ where
         }
 
         let key_size = data_cursor.read_u16::<LittleEndian>()? as usize;
-        let _data_size = data_cursor.read_u16::<LittleEndian>()? as usize;
+        let _data_size = data_cursor.read_u24::<LittleEndian>()? as usize;
 
         let key = <K as Serializable>::deserialize(&mut data_cursor, key_size)?;
         Ok(key)
