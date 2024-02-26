@@ -28,10 +28,10 @@ const LEVELS_MINIMUM_ITEMS: u64 = 2;
 /// Index builder that creates a file index from any iterator. If the given
 /// iterator is already sorted, the `build_from_sorted` method can be used,
 /// while `build` can take any iterator. The `build` method will sort the
-/// iterator first using external sorting using the `extsort` crate.
+/// iterator first using external sorting with the `extsort` crate.
 ///
-/// As the index is being built, checkpoints / nodes are added to the file.
-/// These checkpoints / nodes are similar to the ones in a skip list, except
+/// As the index is being built, checkpoints/nodes are added to the file.
+/// These checkpoints/nodes are similar to the ones in a skip list, except
 /// that they point to previous checkpoints instead of pointing to next
 /// checkpoints.
 pub struct Builder<K, V>
@@ -60,13 +60,12 @@ where
         }
     }
 
-    /// Indicates approximate number of items we want per last-level checkpoint.
+    /// Indicates the approximate number of items we want per last-level checkpoint.
     ///
-    /// A higher value means that once a checkpoint in which we know the
-    /// item is after is found, we may need to iterate through up to
-    /// `log_base` items. A lower value will prevent creating too many levels
-    /// when the index gets bigger, but will require more scanning through more
-    /// entries to find the right one.
+    /// A higher value means that once a checkpoint is found in which we know the
+    /// item is after, we may need to iterate through up to `log_base` items.
+    /// A lower value will prevent creating too many levels when the index gets
+    /// bigger, but will require scanning through more entries to find the right one.
     ///
     /// Default value: 5.0
     pub fn with_log_base(mut self, log_base: f64) -> Self {
@@ -74,11 +73,11 @@ where
         self
     }
 
-    /// When using the `build` method from a non-sorted iterator, this value is
-    /// passed to the `extsort` crate to define how many items will be buffered
-    /// to memory before being flushed to disk.
+    /// When using the `build` method with a non-sorted iterator, this value is
+    /// passed to the `extsort` crate to define the number of items that will be
+    /// buffered in memory before being flushed to disk.
     ///
-    /// This number is the actual number of entries, not the sum of their size.
+    /// This number represents the actual count of entries, not the sum of their sizes.
     pub fn with_extsort_segment_size(mut self, max_size: usize) -> Self {
         self.extsort_segment_size = Some(max_size);
         self
