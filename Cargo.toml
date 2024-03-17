@@ -36,7 +36,11 @@ skeptic = "0.13"
 
 [[bench]]
 harness = false
-name = "extindex"
+name = "builder"
+
+[[bench]]
+harness = false
+name = "reader"
 
 [profile.bench]
 debug = true

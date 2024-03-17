@@ -8,12 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.7.0] - 2024-02-25
 
 - Breaking: increase value size to 24bits (from 16bits), which means that the
-  maximum value size is now 16MB (from 64KB).
+  maximum value size is now 16MB (from 64KB). This required the index version
+  to be bumped, leading to backward incompatibility.
 - Fix: delete tmp directory when external sorted is used.
 
 ## [0.6.0] - 2024-02-19
 
-- Potentially breaking: support for empty index instead of failing if the index is empty.
+- Potentially breaking: support for empty index instead of failing if the index
+  is empty.
 
 ## [0.5.0] - 2022-08-02
 
