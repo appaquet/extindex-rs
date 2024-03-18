@@ -7,7 +7,7 @@ iterator, or can use [extsort](https://crates.io/crates/extsort) to externally
 sort the iterator first, and then build the index from it.
 
 The index allows random lookups and sorted scans. An indexed entry consists of a
-key and a value.  The key needs to implement `Eq` and `Ord`, and both the key
+key and a value. The key needs to implement `Eq` and `Ord`, and both the key
 and values need to implement a `Serializable` trait for serialization to and
 from disk. It is possible to rely on the [`serde`](https://crates.io/crates/serde)
 library to implement this trait for most types.
