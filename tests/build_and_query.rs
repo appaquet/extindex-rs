@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use extindex::{Builder, Entry, Reader, SerdeWrapper};
+use extindex::{size::DataSize, Builder, Entry, Reader, SerdeWrapper};
 
 #[test]
 fn build_and_read_unique_key() {
@@ -108,7 +108,7 @@ fn empty_index() {
 }
 
 #[test]
-fn fuzz_build_read_1_to_650_items() {
+fn fuzz_build_read_u16_u16_1_to_650_items() {
     let index_file = tempfile::NamedTempFile::new().unwrap();
 
     // Test up to 4 levels (log5(650) = 4)
@@ -117,6 +117,26 @@ fn fuzz_build_read_1_to_650_items() {
         builder.build(create_entries(nb_entries, "")).unwrap();
 
         let index = Reader::<String, String>::open(index_file.path()).unwrap();
+        for i in 0..nb_entries {
+            index.find(&format!("key:{}", i)).unwrap().unwrap();
+
+            index.find_first(&format!("key:{}", i)).unwrap().unwrap();
+        }
+    }
+}
+
+#[test]
+fn fuzz_build_read_u32_u32_1_to_650_items() {
+    let index_file = tempfile::NamedTempFile::new().unwrap();
+
+    // Test up to 4 levels (log5(650) = 4)
+    for nb_entries in (1..=650).step_by(13) {
+        let builder = Builder::<_, _, u32, u32>::new_sized(index_file.path());
+        builder
+            .build(create_entries_sized::<u32, u32>(nb_entries, ""))
+            .unwrap();
+
+        let index = Reader::<String, String, u32, u32>::open_sized(index_file.path()).unwrap();
         for i in 0..nb_entries {
             index.find(&format!("key:{}", i)).unwrap().unwrap();
 
@@ -208,16 +228,36 @@ fn test_serde_struct() {
 fn create_entries(
     nb_entries: usize,
     extra: &'static str,
-) -> impl Iterator<Item = Entry<String, String>> + 'static {
+) -> impl Iterator<Item = Entry<String, String, u16, u16>> + 'static {
     (0..nb_entries)
         .map(move |idx| build_entry(format!("key:{}", idx), format!("val:{}:{}", extra, idx)))
 }
 
-fn build_entry(key: String, value: String) -> Entry<String, String> {
+fn create_entries_sized<KS, VS>(
+    nb_entries: usize,
+    extra: &'static str,
+) -> impl Iterator<Item = Entry<String, String, KS, VS>> + 'static
+where
+    KS: DataSize,
+    VS: DataSize,
+{
+    (0..nb_entries)
+        .map(move |idx| build_entry_sized(format!("key:{}", idx), format!("val:{}:{}", extra, idx)))
+}
+
+fn build_entry(key: String, value: String) -> Entry<String, String, u16, u16> {
     Entry::new(key, value)
 }
 
-fn build_entry_ref(key: &str, value: &str) -> Entry<String, String> {
+fn build_entry_sized<KS, VS>(key: String, value: String) -> Entry<String, String, KS, VS>
+where
+    KS: DataSize,
+    VS: DataSize,
+{
+    Entry::new_sized(key, value)
+}
+
+fn build_entry_ref(key: &str, value: &str) -> Entry<String, String, u16, u16> {
     Entry::new(key.to_string(), value.to_string())
 }
 

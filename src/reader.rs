@@ -14,31 +14,43 @@
 
 use std::{borrow::Borrow, fs::File, path::Path};
 
-use crate::{
-    data::{self},
-    Entry, Serializable,
-};
+use crate::{data, size::DataSize, Entry, Serializable};
 
 /// Index reader
-pub struct Reader<K, V>
+pub struct Reader<K, V, KS = u16, VS = u16>
 where
     K: Ord + PartialEq + Serializable,
     V: Serializable,
+    KS: DataSize,
+    VS: DataSize,
 {
     _file: File,
     data: memmap2::Mmap,
     nb_levels: usize,
     last_checkpoint_position: Option<usize>, // if none, index is empty
-    phantom: std::marker::PhantomData<(K, V)>,
+    phantom: std::marker::PhantomData<(K, V, KS, VS)>,
 }
 
-impl<K, V> Reader<K, V>
+impl<K, V> Reader<K, V, u16, u16>
 where
     K: Ord + PartialEq + Serializable,
     V: Serializable,
 {
     /// Opens an index file built using the Builder at the given path.
-    pub fn open<P: AsRef<Path>>(path: P) -> Result<Reader<K, V>, ReaderError> {
+    pub fn open<P: AsRef<Path>>(path: P) -> Result<Reader<K, V, u16, u16>, ReaderError> {
+        Reader::<K, V, u16, u16>::open_sized(path)
+    }
+}
+
+impl<K, V, KS, VS> Reader<K, V, KS, VS>
+where
+    K: Ord + PartialEq + Serializable,
+    V: Serializable,
+    KS: DataSize,
+    VS: DataSize,
+{
+    /// Opens an index file built using the Builder at the given path.
+    pub fn open_sized<P: AsRef<Path>>(path: P) -> Result<Reader<K, V, KS, VS>, ReaderError> {
         let file_meta = std::fs::metadata(path.as_ref())?;
         if file_meta.len() > std::usize::MAX as u64 {
             error!(
@@ -78,7 +90,7 @@ where
     /// Finds any entry matching the given needle. This means that there is no
     /// guarantee on which entry is returned first if the key is present
     /// multiple times.
-    pub fn find<Q: ?Sized>(&self, needle: &Q) -> Result<Option<Entry<K, V>>, ReaderError>
+    pub fn find<Q: ?Sized>(&self, needle: &Q) -> Result<Option<Entry<K, V, KS, VS>>, ReaderError>
     where
         K: Borrow<Q>,
         Q: Ord,
@@ -93,7 +105,10 @@ where
     ///
     /// Warning: Make sure that you sort by key + value and use stable sorting
     /// if you care in which order values are returned.
-    pub fn find_first<Q: ?Sized>(&self, needle: &Q) -> Result<Option<Entry<K, V>>, ReaderError>
+    pub fn find_first<Q: ?Sized>(
+        &self,
+        needle: &Q,
+    ) -> Result<Option<Entry<K, V, KS, VS>>, ReaderError>
     where
         K: Borrow<Q>,
         Q: Ord,
@@ -105,14 +120,14 @@ where
 
     /// Returns an iterator that iterates from the beginning of the index to the
     /// index of the index.
-    pub fn iter(&self) -> impl Iterator<Item = Entry<K, V>> + '_ {
+    pub fn iter(&self) -> impl Iterator<Item = Entry<K, V, KS, VS>> + '_ {
         self.iterate_entries_from_position(None)
             .map(|file_entry| file_entry.entry)
     }
 
     /// Returns an iterator that iterates from the end of the index to the
     /// beginning of the index.
-    pub fn iter_reverse(&self) -> impl Iterator<Item = Entry<K, V>> + '_ {
+    pub fn iter_reverse(&self) -> impl Iterator<Item = Entry<K, V, KS, VS>> + '_ {
         self.reverse_iterate_entries_from_position(None)
             .map(|file_entry| file_entry.entry)
     }
@@ -124,7 +139,7 @@ where
     pub fn iter_from<'a, Q: ?Sized>(
         &'a self,
         needle: &Q,
-    ) -> Result<impl Iterator<Item = Entry<K, V>> + 'a, ReaderError>
+    ) -> Result<impl Iterator<Item = Entry<K, V, KS, VS>> + 'a, ReaderError>
     where
         K: Borrow<Q>,
         Q: Ord,
@@ -155,7 +170,7 @@ where
             .collect();
 
         let entry_file_position = seri_checkpoint.entry_position as usize;
-        let entry_key = data::Entry::<K, V>::read_key(&self.data[entry_file_position..])?;
+        let entry_key = data::Entry::<K, V, KS, VS>::read_key(&self.data[entry_file_position..])?;
 
         Ok(Checkpoint {
             entry_key,
@@ -164,7 +179,7 @@ where
         })
     }
 
-    fn read_entry(&self, entry_position: usize) -> Result<FileEntry<K, V>, ReaderError> {
+    fn read_entry(&self, entry_position: usize) -> Result<FileEntry<K, V, KS, VS>, ReaderError> {
         let (seri_entry, _read_size) = data::Entry::read_slice(&self.data[entry_position..])?;
         Ok(FileEntry {
             entry: seri_entry.entry,
@@ -184,7 +199,7 @@ where
 
         loop {
             let (objects, read_size) =
-                data::Object::<K, V>::read(&self.data[from_position..], self.nb_levels)?;
+                data::Object::<K, V, KS, VS>::read(&self.data[from_position..], self.nb_levels)?;
 
             match objects {
                 data::Object::Checkpoint(_) => {
@@ -205,7 +220,7 @@ where
         &self,
         needle: &Q,
         find_first_match: bool,
-    ) -> Result<Option<FileEntry<K, V>>, ReaderError>
+    ) -> Result<Option<FileEntry<K, V, KS, VS>>, ReaderError>
     where
         K: Borrow<Q>,
         Q: Ord + PartialEq + Eq,
@@ -273,7 +288,7 @@ where
     fn iterate_entries_from_position(
         &self,
         from_position: Option<usize>,
-    ) -> FileEntryIterator<K, V> {
+    ) -> FileEntryIterator<K, V, KS, VS> {
         let from_position = from_position.unwrap_or_else(data::Header::size);
         FileEntryIterator {
             reader: self,
@@ -284,7 +299,7 @@ where
     fn reverse_iterate_entries_from_position(
         &self,
         from_position: Option<usize>,
-    ) -> ReverseFileEntryIterator<K, V> {
+    ) -> ReverseFileEntryIterator<K, V, KS, VS> {
         let (next_checkpoint, from_position) =
             if let Some(last_checkpoint_position) = self.last_checkpoint_position {
                 let from_position = from_position.unwrap_or(last_checkpoint_position);
@@ -311,7 +326,7 @@ where
         &self,
         from_position: Option<usize>,
         needle: &Q,
-    ) -> Option<FileEntry<K, V>>
+    ) -> Option<FileEntry<K, V, KS, VS>>
     where
         K: Borrow<Q>,
         Q: Ord + PartialEq + Eq,
@@ -323,21 +338,25 @@ where
 }
 
 /// Iterator over entries of the index.
-struct FileEntryIterator<'reader, K, V>
+struct FileEntryIterator<'reader, K, V, KS, VS>
 where
     K: Ord + Serializable,
     V: Serializable,
+    KS: DataSize,
+    VS: DataSize,
 {
-    reader: &'reader Reader<K, V>,
+    reader: &'reader Reader<K, V, KS, VS>,
     current_position: usize,
 }
 
-impl<'reader, K, V> Iterator for FileEntryIterator<'reader, K, V>
+impl<'reader, K, V, KS, VS> Iterator for FileEntryIterator<'reader, K, V, KS, VS>
 where
     K: Ord + Serializable,
     V: Serializable,
+    KS: DataSize,
+    VS: DataSize,
 {
-    type Item = FileEntry<K, V>;
+    type Item = FileEntry<K, V, KS, VS>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.current_position >= self.reader.data.len() {
@@ -368,22 +387,26 @@ where
 /// them in reverse order. Then when they have all been yielded, it loads the
 /// next checkpoint (which is at an earlier position in the file), and repeats
 /// the process.
-struct ReverseFileEntryIterator<'reader, K, V>
+struct ReverseFileEntryIterator<'reader, K, V, KS, VS>
 where
     K: Ord + Serializable,
     V: Serializable,
+    KS: DataSize,
+    VS: DataSize,
 {
-    reader: &'reader Reader<K, V>,
-    checkpoint: Option<Checkpoint<K>>, // next checkpoint
-    entries: Vec<FileEntry<K, V>>,     // entries between prev and next checkpoint
+    reader: &'reader Reader<K, V, KS, VS>,
+    checkpoint: Option<Checkpoint<K>>,     // next checkpoint
+    entries: Vec<FileEntry<K, V, KS, VS>>, // entries between prev and next checkpoint
 }
 
-impl<'reader, K, V> ReverseFileEntryIterator<'reader, K, V>
+impl<'reader, K, V, KS, VS> ReverseFileEntryIterator<'reader, K, V, KS, VS>
 where
     K: Ord + Serializable,
     V: Serializable,
+    KS: DataSize,
+    VS: DataSize,
 {
-    fn new(reader: &'reader Reader<K, V>, checkpoint: Option<Checkpoint<K>>) -> Self {
+    fn new(reader: &'reader Reader<K, V, KS, VS>, checkpoint: Option<Checkpoint<K>>) -> Self {
         let mut iter = ReverseFileEntryIterator {
             reader,
             checkpoint,
@@ -438,12 +461,14 @@ where
     }
 }
 
-impl<'reader, K, V> Iterator for ReverseFileEntryIterator<'reader, K, V>
+impl<'reader, K, V, KS, VS> Iterator for ReverseFileEntryIterator<'reader, K, V, KS, VS>
 where
     K: Ord + Serializable,
     V: Serializable,
+    KS: DataSize,
+    VS: DataSize,
 {
-    type Item = FileEntry<K, V>;
+    type Item = FileEntry<K, V, KS, VS>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let _ = self.checkpoint.as_ref()?;
@@ -460,12 +485,14 @@ where
 }
 
 /// Entry found at a specific position of the index
-struct FileEntry<K, V>
+struct FileEntry<K, V, KS, VS>
 where
     K: Ord + Serializable,
     V: Serializable,
+    KS: DataSize,
+    VS: DataSize,
 {
-    entry: Entry<K, V>,
+    entry: Entry<K, V, KS, VS>,
     position: usize,
 }
 
