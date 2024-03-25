@@ -8,8 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.7.0] - 2024-03-24
 
 - Potentially breaking: It is now possible to pass the key and value size at
-  index creation and opening. This allow overriding the default size of u16
-  (65KB). The default is still u16.
+  index creation and opening via type parameters. Both type parameters still uses
+  u16 as default value if not specified, which makes it backward compatible.
 
 ## [0.6.1] - 2024-02-25
 

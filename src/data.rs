@@ -226,18 +226,13 @@ where
             }
         };
 
-        // TODO: Change to KS and VS check
-        if key_size > MAX_KEY_SIZE_BYTES || value_size > MAX_VALUE_SIZE_BYTES {
+        if key_size > KS::max_value() || value_size > VS::max_value() {
             return Err(SerializationError::OutOfBound);
         }
 
         output.write_u8(OBJECT_ID_ENTRY)?;
         KS::write(output, key_size)?;
         VS::write(output, value_size)?;
-        // output.write_u16::<LittleEndian>(key_size as u16)?;
-        // output.write_u16::<LittleEndian>(value_size as u16)?;
-        // output.write_u16::<LittleEndian>(key_size as u16)?;
-        // output.write_u16::<LittleEndian>(value_size as u16)?;
 
         if let Some(key_data) = key_data.as_ref() {
             output.write_all(key_data)?;
@@ -267,10 +262,6 @@ where
             return Err(SerializationError::InvalidObjectType);
         }
 
-        // let key_size = data_cursor.read_u16::<LittleEndian>()? as usize;
-        // let data_size = data_cursor.read_u16::<LittleEndian>()? as usize;
-        // let key_size = data_cursor.read_u32::<LittleEndian>()? as usize;
-        // let data_size = data_cursor.read_u32::<LittleEndian>()? as usize;
         let key_size = KS::read(data_cursor)?;
         let data_size = VS::read(data_cursor)?;
         let key = <K as Serializable>::deserialize(data_cursor, key_size)?;
@@ -291,8 +282,6 @@ where
             return Err(SerializationError::InvalidObjectType);
         }
 
-        // let key_size = data_cursor.read_u16::<LittleEndian>()? as usize;
-        // let _data_size = data_cursor.read_u16::<LittleEndian>()? as usize;
         let key_size = KS::read(&mut data_cursor)?;
         let _data_size = VS::read(&mut data_cursor)?;
 

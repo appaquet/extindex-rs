@@ -53,7 +53,7 @@ where
     V: Serializable,
 {
     /// Creates an index builder that will write to the given file path with
-    /// default u16 sizes for keys and values.
+    /// default key and value size of u16.
     pub fn new<P: Into<PathBuf>>(path: P) -> Builder<K, V, u16, u16> {
         Self::new_sized(path)
     }
@@ -67,7 +67,7 @@ where
     VS: DataSize,
 {
     /// Creates an index builder that will write to the given file path with the
-    /// given sizes for keys and values.
+    /// given key and value size.
     pub fn new_sized<P: Into<PathBuf>>(path: P) -> Builder<K, V, KS, VS> {
         Builder {
             path: path.into(),

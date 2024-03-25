@@ -2,8 +2,12 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 use std::io::{Read, Write};
 
+/// Trait for key and value size. This is used to specify the size of the key
+/// and value in the builder and reader.
 pub trait DataSize: Sized + Send + Sync + Clone + Copy {
     fn size() -> usize;
+
+    fn max_value() -> usize;
 
     fn write<W: Write>(output: &mut W, value: usize) -> Result<(), std::io::Error>;
 
@@ -13,6 +17,10 @@ pub trait DataSize: Sized + Send + Sync + Clone + Copy {
 impl DataSize for u8 {
     fn size() -> usize {
         1
+    }
+
+    fn max_value() -> usize {
+        u8::MAX as usize
     }
 
     fn write<W: Write>(output: &mut W, value: usize) -> Result<(), std::io::Error> {
@@ -27,6 +35,10 @@ impl DataSize for u8 {
 impl DataSize for u16 {
     fn size() -> usize {
         2
+    }
+
+    fn max_value() -> usize {
+        u16::MAX as usize
     }
 
     fn write<W: Write>(output: &mut W, value: usize) -> Result<(), std::io::Error> {
@@ -46,6 +58,10 @@ impl DataSize for U24 {
         3
     }
 
+    fn max_value() -> usize {
+        16777215
+    }
+
     fn write<W: Write>(output: &mut W, value: usize) -> Result<(), std::io::Error> {
         output.write_u24::<LittleEndian>(value as u32)
     }
@@ -60,6 +76,10 @@ impl DataSize for u32 {
         4
     }
 
+    fn max_value() -> usize {
+        u32::MAX as usize
+    }
+
     fn write<W: Write>(output: &mut W, value: usize) -> Result<(), std::io::Error> {
         output.write_u32::<LittleEndian>(value as u32)
     }
@@ -72,6 +92,10 @@ impl DataSize for u32 {
 impl DataSize for u64 {
     fn size() -> usize {
         8
+    }
+
+    fn max_value() -> usize {
+        u64::MAX as usize
     }
 
     fn write<W: Write>(output: &mut W, value: usize) -> Result<(), std::io::Error> {

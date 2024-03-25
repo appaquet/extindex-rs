@@ -36,7 +36,8 @@ where
     K: Ord + PartialEq + Serializable,
     V: Serializable,
 {
-    /// Opens an index file built using the Builder at the given path.
+    /// Opens an index file built using the Builder at the given path with the
+    /// default key and value size of u16.
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Reader<K, V, u16, u16>, ReaderError> {
         Reader::<K, V, u16, u16>::open_sized(path)
     }

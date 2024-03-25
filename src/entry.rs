@@ -98,8 +98,8 @@ where
     }
 }
 
-/// Entry wrapper used for sorting. This is used so that we can write the entry
-/// to disk.
+/// Entry wrapper used for sorting. This is used so that we can write entries
+/// using `extsort` external sorter.
 pub(crate) struct SortableEntry<K, V, KS, VS>
 where
     K: Ord + Serializable,
