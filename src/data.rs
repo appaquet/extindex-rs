@@ -84,6 +84,8 @@ where
     Checkpoint(Checkpoint),
 }
 
+type ObjectAndSize<K, V, KS, VS> = (Object<K, V, KS, VS>, usize);
+
 impl<K, V, KS, VS> Object<K, V, KS, VS>
 where
     K: Ord + Serializable,
@@ -94,7 +96,7 @@ where
     pub fn read(
         data: &[u8],
         nb_levels: usize,
-    ) -> Result<(Object<K, V, KS, VS>, usize), SerializationError> {
+    ) -> Result<ObjectAndSize<K, V, KS, VS>, SerializationError> {
         if data.is_empty() {
             return Err(SerializationError::OutOfBound);
         }
@@ -179,11 +181,13 @@ pub struct Entry<K, V, KS, VS>
 where
     K: Ord + Serializable,
     V: Serializable,
-    KS: DataSize,
-    VS: DataSize,
 {
-    pub entry: CrateEntry<K, V, KS, VS>,
+    pub entry: CrateEntry<K, V>,
+    _ks: std::marker::PhantomData<KS>,
+    _vs: std::marker::PhantomData<VS>,
 }
+
+type EntryAndSize<K, V, KS, VS> = (Entry<K, V, KS, VS>, usize);
 
 impl<K, V, KS, VS> Entry<K, V, KS, VS>
 where
@@ -192,8 +196,16 @@ where
     KS: DataSize,
     VS: DataSize,
 {
+    pub fn new(entry: CrateEntry<K, V>) -> Self {
+        Self {
+            entry,
+            _ks: std::marker::PhantomData,
+            _vs: std::marker::PhantomData,
+        }
+    }
+
     pub fn write<W: Write>(
-        entry: &CrateEntry<K, V, KS, VS>,
+        entry: &CrateEntry<K, V>,
         output: &mut W,
     ) -> Result<(), SerializationError> {
         let (key_size, key_data) = match entry.key.size() {
@@ -242,14 +254,14 @@ where
         Ok(())
     }
 
-    pub fn read_slice(data: &[u8]) -> Result<(Entry<K, V, KS, VS>, usize), SerializationError> {
+    pub fn read_slice(data: &[u8]) -> Result<EntryAndSize<K, V, KS, VS>, SerializationError> {
         let mut data_cursor = Cursor::new(data);
         Self::read(&mut data_cursor)
     }
 
     pub fn read<R: Read>(
         data_cursor: &mut R,
-    ) -> Result<(Entry<K, V, KS, VS>, usize), SerializationError> {
+    ) -> Result<EntryAndSize<K, V, KS, VS>, SerializationError> {
         let item_id = data_cursor.read_u8()?;
         if item_id != OBJECT_ID_ENTRY {
             return Err(SerializationError::InvalidObjectType);
@@ -268,7 +280,7 @@ where
             KS::size() + VS::size() +  // key and value size bytes
             key_size + data_size;
         let entry = CrateEntry::new_sized(key, value);
-        Ok((Entry { entry }, entry_file_size))
+        Ok((Entry::new(entry), entry_file_size))
     }
 
     pub fn read_key(data: &[u8]) -> Result<K, SerializationError> {
@@ -355,13 +367,11 @@ mod tests {
     fn known_size_entry_write_read() {
         let mut data = Vec::new();
 
-        let entry = Entry {
-            entry: CrateEntry::new(
-                TestString("key".to_string()),
-                TestString("value".to_string()),
-            ),
-        };
-        Entry::write(&entry.entry, &mut data).unwrap();
+        let entry: Entry<TestString, TestString, u16, u16> = Entry::new(CrateEntry::new(
+            TestString("key".to_string()),
+            TestString("value".to_string()),
+        ));
+        Entry::<TestString, TestString, u16, u16>::write(&entry.entry, &mut data).unwrap();
 
         let (read_entry, size) = Entry::<TestString, TestString, u16, u16>::read_slice(&data)
             .ok()
@@ -380,13 +390,11 @@ mod tests {
     fn known_size_entry_write_read_u32_u32() {
         let mut data = Vec::new();
 
-        let entry: Entry<TestString, TestString, u32, u32> = Entry {
-            entry: CrateEntry::new_sized(
-                TestString("key".to_string()),
-                TestString("value".to_string()),
-            ),
-        };
-        Entry::write(&entry.entry, &mut data).unwrap();
+        let entry: Entry<TestString, TestString, u32, u32> = Entry::new(CrateEntry::new_sized(
+            TestString("key".to_string()),
+            TestString("value".to_string()),
+        ));
+        Entry::<TestString, TestString, u32, u32>::write(&entry.entry, &mut data).unwrap();
 
         let (read_entry, size) = Entry::<TestString, TestString, u32, u32>::read_slice(&data)
             .ok()
@@ -405,13 +413,11 @@ mod tests {
     fn unknown_size_entry_write_read() {
         let mut data = Vec::new();
 
-        let entry = Entry {
-            entry: CrateEntry::new(
-                UnsizedString("key".to_string()),
-                UnsizedString("value".to_string()),
-            ),
-        };
-        Entry::write(&entry.entry, &mut data).unwrap();
+        let entry: Entry<UnsizedString, UnsizedString, u16, u16> = Entry::new(CrateEntry::new(
+            UnsizedString("key".to_string()),
+            UnsizedString("value".to_string()),
+        ));
+        Entry::<UnsizedString, UnsizedString, u16, u16>::write(&entry.entry, &mut data).unwrap();
 
         let (read_entry, size) = Entry::<UnsizedString, UnsizedString, u16, u16>::read_slice(&data)
             .ok()
@@ -430,13 +436,12 @@ mod tests {
     fn unknown_size_entry_write_read_u32_u32() {
         let mut data = Vec::new();
 
-        let entry: Entry<UnsizedString, UnsizedString, u32, u32> = Entry {
-            entry: CrateEntry::new_sized(
+        let entry: Entry<UnsizedString, UnsizedString, u32, u32> =
+            Entry::new(CrateEntry::new_sized(
                 UnsizedString("key".to_string()),
                 UnsizedString("value".to_string()),
-            ),
-        };
-        Entry::write(&entry.entry, &mut data).unwrap();
+            ));
+        Entry::<UnsizedString, UnsizedString, u32, u32>::write(&entry.entry, &mut data).unwrap();
 
         let (read_entry, size) = Entry::<UnsizedString, UnsizedString, u32, u32>::read_slice(&data)
             .ok()
@@ -464,13 +469,11 @@ mod tests {
         };
         checkpoint.write(&mut cursor).ok().unwrap();
 
-        let entry = Entry {
-            entry: CrateEntry::new(
-                TestString("key".to_string()),
-                TestString("value".to_string()),
-            ),
-        };
-        Entry::write(&entry.entry, &mut cursor).unwrap();
+        let entry: Entry<TestString, TestString, u16, u16> = Entry::new(CrateEntry::new(
+            TestString("key".to_string()),
+            TestString("value".to_string()),
+        ));
+        Entry::<TestString, TestString, u16, u16>::write(&entry.entry, &mut cursor).unwrap();
 
         let chk_size = match Object::<TestString, TestString, u32, u32>::read(&data, 1)
             .ok()

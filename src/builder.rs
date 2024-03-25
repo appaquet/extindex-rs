@@ -20,7 +20,7 @@ use std::{
 
 use extsort::ExternalSorter;
 
-use crate::{data, size::DataSize, utils::CountedWrite, Entry, Serializable};
+use crate::{data, entry::SortableEntry, size::DataSize, utils::CountedWrite, Entry, Serializable};
 
 const CHECKPOINT_WRITE_UPCOMING_WITHIN_DISTANCE: u64 = 3; // write checkpoint if we are within 3 items of the expected items
 const LEVELS_MINIMUM_ITEMS: u64 = 2;
@@ -52,8 +52,8 @@ where
     K: Ord + Serializable,
     V: Serializable,
 {
-    /// Creates an index builder that will write to the given file path
-    /// with default u16 sizes for keys and values.
+    /// Creates an index builder that will write to the given file path with
+    /// default u16 sizes for keys and values.
     pub fn new<P: Into<PathBuf>>(path: P) -> Builder<K, V, u16, u16> {
         Self::new_sized(path)
     }
@@ -66,7 +66,8 @@ where
     KS: DataSize,
     VS: DataSize,
 {
-    /// Creates an index builder that will write to the given file path.
+    /// Creates an index builder that will write to the given file path with the
+    /// given sizes for keys and values.
     pub fn new_sized<P: Into<PathBuf>>(path: P) -> Builder<K, V, KS, VS> {
         Builder {
             path: path.into(),
@@ -102,7 +103,7 @@ where
     /// Builds the index using a non-sorted iterator.
     pub fn build<I>(self, iter: I) -> Result<(), BuilderError>
     where
-        I: Iterator<Item = Entry<K, V, KS, VS>>,
+        I: Iterator<Item = Entry<K, V>>,
     {
         let sort_dir = self.sort_dir();
         std::fs::create_dir_all(&sort_dir).expect("couldn't create dit");
@@ -113,15 +114,19 @@ where
             sorter = sorter.with_segment_size(segment_size);
         }
 
+        let iter = iter.map(|entry| SortableEntry::<K, V, KS, VS>::new(entry));
+
         let sorted_iter = sorter.sort(iter)?;
         let sorted_count = sorted_iter.sorted_count();
+
+        let sorted_iter = sorted_iter.map(|entry| Ok(entry?.into_inner()));
 
         self.build_from_sorted_fallible(sorted_iter, sorted_count)
     }
 
     pub fn build_from_sorted<I>(self, iter: I, nb_items: u64) -> Result<(), BuilderError>
     where
-        I: Iterator<Item = Entry<K, V, KS, VS>>,
+        I: Iterator<Item = Entry<K, V>>,
     {
         self.build_from_sorted_fallible(iter.map(Ok), nb_items)
     }
@@ -129,7 +134,7 @@ where
     /// Builds the index using a sorted iterator.
     pub fn build_from_sorted_fallible<I>(self, iter: I, nb_items: u64) -> Result<(), BuilderError>
     where
-        I: Iterator<Item = std::io::Result<Entry<K, V, KS, VS>>>,
+        I: Iterator<Item = std::io::Result<Entry<K, V>>>,
     {
         let file = OpenOptions::new()
             .create(true)
@@ -206,9 +211,9 @@ where
     fn write_entry<W: Write>(
         &self,
         output: &mut W,
-        entry: &Entry<K, V, KS, VS>,
+        entry: &Entry<K, V>,
     ) -> Result<(), BuilderError> {
-        data::Entry::write(entry, output)?;
+        data::Entry::<K, V, KS, VS>::write(entry, output)?;
         Ok(())
     }
 

@@ -10,6 +10,20 @@ pub trait DataSize: Sized + Send + Sync + Clone + Copy {
     fn read<R: Read>(input: &mut R) -> Result<usize, std::io::Error>;
 }
 
+impl DataSize for u8 {
+    fn size() -> usize {
+        1
+    }
+
+    fn write<W: Write>(output: &mut W, value: usize) -> Result<(), std::io::Error> {
+        output.write_u8(value as u8)
+    }
+
+    fn read<R: Read>(input: &mut R) -> Result<usize, std::io::Error> {
+        input.read_u8().map(|v| v as usize)
+    }
+}
+
 impl DataSize for u16 {
     fn size() -> usize {
         2

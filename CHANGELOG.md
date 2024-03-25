@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2024-03-24
+
+- Potentially breaking: It is now possible to pass the key and value size at
+  index creation and opening. This allow overriding the default size of u16
+  (65KB). The default is still u16.
+
 ## [0.6.1] - 2024-02-25
 
 - Fix: delete tmp directory when external sorted is used.

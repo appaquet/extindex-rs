@@ -49,7 +49,8 @@ where
     KS: DataSize,
     VS: DataSize,
 {
-    /// Opens an index file built using the Builder at the given path.
+    /// Opens an index file built using the Builder at the given path with the
+    /// given key and value size.
     pub fn open_sized<P: AsRef<Path>>(path: P) -> Result<Reader<K, V, KS, VS>, ReaderError> {
         let file_meta = std::fs::metadata(path.as_ref())?;
         if file_meta.len() > std::usize::MAX as u64 {
@@ -90,7 +91,7 @@ where
     /// Finds any entry matching the given needle. This means that there is no
     /// guarantee on which entry is returned first if the key is present
     /// multiple times.
-    pub fn find<Q: ?Sized>(&self, needle: &Q) -> Result<Option<Entry<K, V, KS, VS>>, ReaderError>
+    pub fn find<Q: ?Sized>(&self, needle: &Q) -> Result<Option<Entry<K, V>>, ReaderError>
     where
         K: Borrow<Q>,
         Q: Ord,
@@ -105,10 +106,7 @@ where
     ///
     /// Warning: Make sure that you sort by key + value and use stable sorting
     /// if you care in which order values are returned.
-    pub fn find_first<Q: ?Sized>(
-        &self,
-        needle: &Q,
-    ) -> Result<Option<Entry<K, V, KS, VS>>, ReaderError>
+    pub fn find_first<Q: ?Sized>(&self, needle: &Q) -> Result<Option<Entry<K, V>>, ReaderError>
     where
         K: Borrow<Q>,
         Q: Ord,
@@ -120,14 +118,14 @@ where
 
     /// Returns an iterator that iterates from the beginning of the index to the
     /// index of the index.
-    pub fn iter(&self) -> impl Iterator<Item = Entry<K, V, KS, VS>> + '_ {
+    pub fn iter(&self) -> impl Iterator<Item = Entry<K, V>> + '_ {
         self.iterate_entries_from_position(None)
             .map(|file_entry| file_entry.entry)
     }
 
     /// Returns an iterator that iterates from the end of the index to the
     /// beginning of the index.
-    pub fn iter_reverse(&self) -> impl Iterator<Item = Entry<K, V, KS, VS>> + '_ {
+    pub fn iter_reverse(&self) -> impl Iterator<Item = Entry<K, V>> + '_ {
         self.reverse_iterate_entries_from_position(None)
             .map(|file_entry| file_entry.entry)
     }
@@ -139,7 +137,7 @@ where
     pub fn iter_from<'a, Q: ?Sized>(
         &'a self,
         needle: &Q,
-    ) -> Result<impl Iterator<Item = Entry<K, V, KS, VS>> + 'a, ReaderError>
+    ) -> Result<impl Iterator<Item = Entry<K, V>> + 'a, ReaderError>
     where
         K: Borrow<Q>,
         Q: Ord,
@@ -179,8 +177,9 @@ where
         })
     }
 
-    fn read_entry(&self, entry_position: usize) -> Result<FileEntry<K, V, KS, VS>, ReaderError> {
-        let (seri_entry, _read_size) = data::Entry::read_slice(&self.data[entry_position..])?;
+    fn read_entry(&self, entry_position: usize) -> Result<FileEntry<K, V>, ReaderError> {
+        let (seri_entry, _read_size) =
+            data::Entry::<K, V, KS, VS>::read_slice(&self.data[entry_position..])?;
         Ok(FileEntry {
             entry: seri_entry.entry,
             position: entry_position,
@@ -220,7 +219,7 @@ where
         &self,
         needle: &Q,
         find_first_match: bool,
-    ) -> Result<Option<FileEntry<K, V, KS, VS>>, ReaderError>
+    ) -> Result<Option<FileEntry<K, V>>, ReaderError>
     where
         K: Borrow<Q>,
         Q: Ord + PartialEq + Eq,
@@ -326,7 +325,7 @@ where
         &self,
         from_position: Option<usize>,
         needle: &Q,
-    ) -> Option<FileEntry<K, V, KS, VS>>
+    ) -> Option<FileEntry<K, V>>
     where
         K: Borrow<Q>,
         Q: Ord + PartialEq + Eq,
@@ -356,7 +355,7 @@ where
     KS: DataSize,
     VS: DataSize,
 {
-    type Item = FileEntry<K, V, KS, VS>;
+    type Item = FileEntry<K, V>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.current_position >= self.reader.data.len() {
@@ -365,8 +364,11 @@ where
 
         loop {
             let position = self.current_position;
-            let (read_object, read_size) =
-                data::Object::read(&self.reader.data[position..], self.reader.nb_levels).ok()?;
+            let (read_object, read_size) = data::Object::<K, V, KS, VS>::read(
+                &self.reader.data[position..],
+                self.reader.nb_levels,
+            )
+            .ok()?;
             self.current_position += read_size;
             match read_object {
                 data::Object::Checkpoint(_) => continue,
@@ -395,8 +397,9 @@ where
     VS: DataSize,
 {
     reader: &'reader Reader<K, V, KS, VS>,
-    checkpoint: Option<Checkpoint<K>>,     // next checkpoint
-    entries: Vec<FileEntry<K, V, KS, VS>>, // entries between prev and next checkpoint
+    checkpoint: Option<Checkpoint<K>>, // next checkpoint
+    entries: Vec<FileEntry<K, V>>,     // entries between prev and next checkpoint
+    _phantom: std::marker::PhantomData<(KS, VS)>,
 }
 
 impl<'reader, K, V, KS, VS> ReverseFileEntryIterator<'reader, K, V, KS, VS>
@@ -411,6 +414,7 @@ where
             reader,
             checkpoint,
             entries: Vec::new(),
+            _phantom: std::marker::PhantomData,
         };
 
         iter.load_entries();
@@ -468,7 +472,7 @@ where
     KS: DataSize,
     VS: DataSize,
 {
-    type Item = FileEntry<K, V, KS, VS>;
+    type Item = FileEntry<K, V>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let _ = self.checkpoint.as_ref()?;
@@ -485,14 +489,12 @@ where
 }
 
 /// Entry found at a specific position of the index
-struct FileEntry<K, V, KS, VS>
+struct FileEntry<K, V>
 where
     K: Ord + Serializable,
     V: Serializable,
-    KS: DataSize,
-    VS: DataSize,
 {
-    entry: Entry<K, V, KS, VS>,
+    entry: Entry<K, V>,
     position: usize,
 }
 
