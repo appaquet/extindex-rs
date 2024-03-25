@@ -83,6 +83,7 @@ pub mod builder;
 pub mod entry;
 pub mod reader;
 pub mod serializable;
+pub mod size;
 
 mod data;
 mod utils;

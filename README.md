@@ -1,21 +1,23 @@
-extindex
+# extindex
+
 [![crates.io](https://img.shields.io/crates/v/extindex.svg)](https://crates.io/crates/extindex)
-=========
 
-Immutable persisted index (on disk) that can be built in one pass using a sorted iterator, or can
-use [extsort](https://crates.io/crates/extsort) to externally sort the iterator first, and
-then build the index from it.
+Immutable persisted index (on disk) that can be built in one pass using a sorted
+iterator, or can use [extsort](https://crates.io/crates/extsort) to externally
+sort the iterator first, and then build the index from it.
 
-The index allows random lookups and sorted scans. An indexed entry consists of a key and a value.
-The key needs to implement `Eq` and `Ord`, and both the key and values need to implement a
-`Serializable` trait for serialization to and from disk.
+The index allows random lookups and sorted scans. An indexed entry consists of a
+key and a value. The key needs to implement `Eq` and `Ord`, and both the key
+and values need to implement a `Serializable` trait for serialization to and
+from disk. It is possible to rely on the [`serde`](https://crates.io/crates/serde)
+library to implement this trait for most types.
 
-The index is built using a skip list like data structure, but in which lookups are starting from
-the end of the index instead of from the beginning. This allow building the index in a single
-pass on a sorted iterator, since starting from the beginning would require knowing
-checkpoints/nodes ahead in the file.
+The index is built using a skip list-like data structure, but lookups start from
+the end of the index instead of the beginning. This allows building the index in
+a single pass on a sorted iterator, as starting from the beginning would require
+knowing checkpoints/nodes ahead in the file.
 
-# Example <!-- keep in sync with serde_struct.rs  -->
+## Example
 
 ```rust
 extern crate extindex;
@@ -48,6 +50,6 @@ fn main() {
 }
 ```
 
-# TODO
+## Roadmap
 
-- [ ] Possibility to use Bloom filter to prevent hitting the disk when index doesn't have a key
+- Possibility to use a Bloom filter to avoid disk access when the index does not contain a key.

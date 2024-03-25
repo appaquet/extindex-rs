@@ -21,39 +21,8 @@ use std::{
 
 use extindex::{Builder, Entry, Reader, Serializable};
 
-fn bench_index_builder(c: &mut Criterion) {
-    let mut group = c.benchmark_group("Builder");
-    group.sample_size(10);
-    group.measurement_time(Duration::from_secs(9));
-    group.sampling_mode(criterion::SamplingMode::Flat);
-    group.warm_up_time(Duration::from_millis(100));
-
-    let sizes = [10_000, 100_000, 1_000_000];
-    for size in sizes {
-        group.bench_with_input(BenchmarkId::new("known size", size), &size, |b, size| {
-            b.iter(|| {
-                let index_file = tempfile::NamedTempFile::new().unwrap();
-                let index_file = index_file.path();
-
-                let builder = Builder::new(index_file);
-                builder.build(create_known_size_entries(*size)).unwrap();
-            });
-        });
-
-        group.bench_with_input(BenchmarkId::new("unknown size", size), &size, |b, size| {
-            b.iter(|| {
-                let index_file = tempfile::NamedTempFile::new().unwrap();
-                let index_file = index_file.path();
-
-                let builder = Builder::new(index_file);
-                builder.build(create_unknown_size_entries(*size)).unwrap();
-            });
-        });
-    }
-}
-
 fn bench_random_access(c: &mut Criterion) {
-    let mut group = c.benchmark_group("RandomAccess1million");
+    let mut group = c.benchmark_group("random_access");
     group.sample_size(10);
     group.measurement_time(Duration::from_secs(7));
     group.sampling_mode(criterion::SamplingMode::Flat);
@@ -86,7 +55,7 @@ fn bench_random_access(c: &mut Criterion) {
 }
 
 fn bench_iter(c: &mut Criterion) {
-    let mut group = c.benchmark_group("Iter1million");
+    let mut group = c.benchmark_group("iter_1million");
     group.sample_size(10);
     group.measurement_time(Duration::from_secs(7));
     group.sampling_mode(criterion::SamplingMode::Flat);
@@ -139,17 +108,6 @@ fn bench_iter(c: &mut Criterion) {
     });
 }
 
-fn create_known_size_entries(
-    nb_entries: usize,
-) -> impl Iterator<Item = Entry<SizedString, SizedString>> {
-    (0..nb_entries).map(|idx| {
-        Entry::new(
-            SizedString(format!("key:{}", idx)),
-            SizedString(format!("val:{}", idx)),
-        )
-    })
-}
-
 fn create_unknown_size_entries(
     nb_entries: usize,
 ) -> impl Iterator<Item = Entry<UnsizedString, UnsizedString>> {
@@ -159,31 +117,6 @@ fn create_unknown_size_entries(
             UnsizedString(format!("val:{}", idx)),
         )
     })
-}
-
-#[derive(Ord, PartialOrd, Eq, PartialEq, Debug)]
-struct SizedString(String);
-
-impl Serializable for SizedString {
-    fn size(&self) -> Option<usize> {
-        Some(self.0.as_bytes().len())
-    }
-
-    fn serialize<W: Write>(&self, write: &mut W) -> Result<(), std::io::Error> {
-        write.write_all(self.0.as_bytes()).map(|_| ())
-    }
-
-    fn deserialize<R: Read>(data: &mut R, size: usize) -> Result<SizedString, std::io::Error> {
-        let mut bytes = vec![0u8; size];
-        data.read_exact(&mut bytes)?;
-        Ok(SizedString(String::from_utf8_lossy(&bytes).to_string()))
-    }
-}
-
-impl std::fmt::Display for SizedString {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
 }
 
 #[derive(Ord, PartialOrd, Eq, PartialEq, Debug)]
@@ -211,10 +144,5 @@ impl std::fmt::Display for UnsizedString {
     }
 }
 
-criterion_group!(
-    benches,
-    bench_index_builder,
-    bench_random_access,
-    bench_iter
-);
+criterion_group!(benches, bench_random_access, bench_iter);
 criterion_main!(benches);

@@ -17,7 +17,7 @@ use std::io::{Cursor, Read, Write};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use smallvec::SmallVec;
 
-use crate::{Entry as CrateEntry, Serializable};
+use crate::{size::DataSize, Entry as CrateEntry, Serializable};
 
 const INDEX_FILE_MAGIC_HEADER_SIZE: usize = 2;
 const INDEX_FILE_MAGIC_HEADER: [u8; INDEX_FILE_MAGIC_HEADER_SIZE] = [40, 12];
@@ -27,8 +27,6 @@ pub const OBJECT_ID_ENTRY: u8 = 0;
 pub const OBJECT_ID_CHECKPOINT: u8 = 1;
 
 pub const MAX_LEVELS: usize = 256;
-pub const MAX_KEY_SIZE_BYTES: usize = 1024;
-pub const MAX_VALUE_SIZE_BYTES: usize = 65000;
 
 /// Header of the index.
 ///
@@ -73,24 +71,30 @@ impl Header {
 }
 
 /// Object of the index, that can be either a key-value entry or a checkpoint.
-pub enum Object<K, V>
+pub enum Object<K, V, KS, VS>
 where
     K: Ord + Serializable,
     V: Serializable,
+    KS: DataSize,
+    VS: DataSize,
 {
-    Entry(Entry<K, V>),
+    Entry(Entry<K, V, KS, VS>),
     Checkpoint(Checkpoint),
 }
 
-impl<K, V> Object<K, V>
+type ObjectAndSize<K, V, KS, VS> = (Object<K, V, KS, VS>, usize);
+
+impl<K, V, KS, VS> Object<K, V, KS, VS>
 where
     K: Ord + Serializable,
     V: Serializable,
+    KS: DataSize,
+    VS: DataSize,
 {
     pub fn read(
         data: &[u8],
         nb_levels: usize,
-    ) -> Result<(Object<K, V>, usize), SerializationError> {
+    ) -> Result<ObjectAndSize<K, V, KS, VS>, SerializationError> {
         if data.is_empty() {
             return Err(SerializationError::OutOfBound);
         }
@@ -171,19 +175,33 @@ impl Checkpoint {
 }
 
 /// Key-value entry of the index.
-pub struct Entry<K, V>
+pub struct Entry<K, V, KS, VS>
 where
     K: Ord + Serializable,
     V: Serializable,
 {
     pub entry: CrateEntry<K, V>,
+    _ks: std::marker::PhantomData<KS>,
+    _vs: std::marker::PhantomData<VS>,
 }
 
-impl<K, V> Entry<K, V>
+type EntryAndSize<K, V, KS, VS> = (Entry<K, V, KS, VS>, usize);
+
+impl<K, V, KS, VS> Entry<K, V, KS, VS>
 where
     K: Ord + Serializable,
     V: Serializable,
+    KS: DataSize,
+    VS: DataSize,
 {
+    pub fn new(entry: CrateEntry<K, V>) -> Self {
+        Self {
+            entry,
+            _ks: std::marker::PhantomData,
+            _vs: std::marker::PhantomData,
+        }
+    }
+
     pub fn write<W: Write>(
         entry: &CrateEntry<K, V>,
         output: &mut W,
@@ -206,13 +224,13 @@ where
             }
         };
 
-        if key_size > MAX_KEY_SIZE_BYTES || value_size > MAX_VALUE_SIZE_BYTES {
+        if key_size > KS::max_value() || value_size > VS::max_value() {
             return Err(SerializationError::OutOfBound);
         }
 
         output.write_u8(OBJECT_ID_ENTRY)?;
-        output.write_u16::<LittleEndian>(key_size as u16)?;
-        output.write_u16::<LittleEndian>(value_size as u16)?;
+        KS::write(output, key_size)?;
+        VS::write(output, value_size)?;
 
         if let Some(key_data) = key_data.as_ref() {
             output.write_all(key_data)?;
@@ -229,25 +247,29 @@ where
         Ok(())
     }
 
-    pub fn read_slice(data: &[u8]) -> Result<(Entry<K, V>, usize), SerializationError> {
+    pub fn read_slice(data: &[u8]) -> Result<EntryAndSize<K, V, KS, VS>, SerializationError> {
         let mut data_cursor = Cursor::new(data);
         Self::read(&mut data_cursor)
     }
 
-    pub fn read<R: Read>(data_cursor: &mut R) -> Result<(Entry<K, V>, usize), SerializationError> {
+    pub fn read<R: Read>(
+        data_cursor: &mut R,
+    ) -> Result<EntryAndSize<K, V, KS, VS>, SerializationError> {
         let item_id = data_cursor.read_u8()?;
         if item_id != OBJECT_ID_ENTRY {
             return Err(SerializationError::InvalidObjectType);
         }
 
-        let key_size = data_cursor.read_u16::<LittleEndian>()? as usize;
-        let data_size = data_cursor.read_u16::<LittleEndian>()? as usize;
+        let key_size = KS::read(data_cursor)?;
+        let data_size = VS::read(data_cursor)?;
         let key = <K as Serializable>::deserialize(data_cursor, key_size)?;
         let value = <V as Serializable>::deserialize(data_cursor, data_size)?;
 
-        let entry_file_size = 1 + 2 + 2 + key_size + data_size;
-        let entry = CrateEntry { key, value };
-        Ok((Entry { entry }, entry_file_size))
+        let entry_file_size = 1 + // obj id
+            KS::size() + VS::size() +
+            key_size + data_size;
+        let entry = CrateEntry::new_sized(key, value);
+        Ok((Entry::new(entry), entry_file_size))
     }
 
     pub fn read_key(data: &[u8]) -> Result<K, SerializationError> {
@@ -258,8 +280,8 @@ where
             return Err(SerializationError::InvalidObjectType);
         }
 
-        let key_size = data_cursor.read_u16::<LittleEndian>()? as usize;
-        let _data_size = data_cursor.read_u16::<LittleEndian>()? as usize;
+        let key_size = KS::read(&mut data_cursor)?;
+        let _data_size = VS::read(&mut data_cursor)?;
 
         let key = <K as Serializable>::deserialize(&mut data_cursor, key_size)?;
         Ok(key)
@@ -278,6 +300,15 @@ pub enum SerializationError {
 impl From<std::io::Error> for SerializationError {
     fn from(err: std::io::Error) -> Self {
         SerializationError::IO(err)
+    }
+}
+
+impl SerializationError {
+    pub fn into_io(self) -> std::io::Error {
+        match self {
+            SerializationError::IO(err) => err,
+            other => std::io::Error::new(std::io::ErrorKind::Other, format!("{other:?}")),
+        }
     }
 }
 
@@ -323,22 +354,43 @@ mod tests {
     fn known_size_entry_write_read() {
         let mut data = Vec::new();
 
-        let entry = Entry {
-            entry: CrateEntry {
-                key: TestString("key".to_string()),
-                value: TestString("value".to_string()),
-            },
-        };
-        Entry::write(&entry.entry, &mut data).unwrap();
+        let entry: Entry<TestString, TestString, u16, u16> = Entry::new(CrateEntry::new(
+            TestString("key".to_string()),
+            TestString("value".to_string()),
+        ));
+        Entry::<TestString, TestString, u16, u16>::write(&entry.entry, &mut data).unwrap();
 
-        let (read_entry, size) = Entry::<TestString, TestString>::read_slice(&data)
+        let (read_entry, size) = Entry::<TestString, TestString, u16, u16>::read_slice(&data)
             .ok()
             .unwrap();
         assert_eq!(read_entry.entry.key, TestString("key".to_string()));
         assert_eq!(read_entry.entry.value, TestString("value".to_string()));
         assert_eq!(size, data.len());
 
-        let read_entry_key = Entry::<TestString, TestString>::read_key(&data)
+        let read_entry_key = Entry::<TestString, TestString, u16, u16>::read_key(&data)
+            .ok()
+            .unwrap();
+        assert_eq!(read_entry_key, TestString("key".to_string()));
+    }
+
+    #[test]
+    fn known_size_entry_write_read_u32_u32() {
+        let mut data = Vec::new();
+
+        let entry: Entry<TestString, TestString, u32, u32> = Entry::new(CrateEntry::new_sized(
+            TestString("key".to_string()),
+            TestString("value".to_string()),
+        ));
+        Entry::<TestString, TestString, u32, u32>::write(&entry.entry, &mut data).unwrap();
+
+        let (read_entry, size) = Entry::<TestString, TestString, u32, u32>::read_slice(&data)
+            .ok()
+            .unwrap();
+        assert_eq!(read_entry.entry.key, TestString("key".to_string()));
+        assert_eq!(read_entry.entry.value, TestString("value".to_string()));
+        assert_eq!(size, data.len());
+
+        let read_entry_key = Entry::<TestString, TestString, u32, u32>::read_key(&data)
             .ok()
             .unwrap();
         assert_eq!(read_entry_key, TestString("key".to_string()));
@@ -348,22 +400,44 @@ mod tests {
     fn unknown_size_entry_write_read() {
         let mut data = Vec::new();
 
-        let entry = Entry {
-            entry: CrateEntry {
-                key: UnsizedString("key".to_string()),
-                value: UnsizedString("value".to_string()),
-            },
-        };
-        Entry::write(&entry.entry, &mut data).unwrap();
+        let entry: Entry<UnsizedString, UnsizedString, u16, u16> = Entry::new(CrateEntry::new(
+            UnsizedString("key".to_string()),
+            UnsizedString("value".to_string()),
+        ));
+        Entry::<UnsizedString, UnsizedString, u16, u16>::write(&entry.entry, &mut data).unwrap();
 
-        let (read_entry, size) = Entry::<UnsizedString, UnsizedString>::read_slice(&data)
+        let (read_entry, size) = Entry::<UnsizedString, UnsizedString, u16, u16>::read_slice(&data)
             .ok()
             .unwrap();
         assert_eq!(read_entry.entry.key, UnsizedString("key".to_string()));
         assert_eq!(read_entry.entry.value, UnsizedString("value".to_string()));
         assert_eq!(size, data.len());
 
-        let read_entry_key = Entry::<UnsizedString, UnsizedString>::read_key(&data)
+        let read_entry_key = Entry::<UnsizedString, UnsizedString, u16, u16>::read_key(&data)
+            .ok()
+            .unwrap();
+        assert_eq!(read_entry_key, UnsizedString("key".to_string()));
+    }
+
+    #[test]
+    fn unknown_size_entry_write_read_u32_u32() {
+        let mut data = Vec::new();
+
+        let entry: Entry<UnsizedString, UnsizedString, u32, u32> =
+            Entry::new(CrateEntry::new_sized(
+                UnsizedString("key".to_string()),
+                UnsizedString("value".to_string()),
+            ));
+        Entry::<UnsizedString, UnsizedString, u32, u32>::write(&entry.entry, &mut data).unwrap();
+
+        let (read_entry, size) = Entry::<UnsizedString, UnsizedString, u32, u32>::read_slice(&data)
+            .ok()
+            .unwrap();
+        assert_eq!(read_entry.entry.key, UnsizedString("key".to_string()));
+        assert_eq!(read_entry.entry.value, UnsizedString("value".to_string()));
+        assert_eq!(size, data.len());
+
+        let read_entry_key = Entry::<UnsizedString, UnsizedString, u32, u32>::read_key(&data)
             .ok()
             .unwrap();
         assert_eq!(read_entry_key, UnsizedString("key".to_string()));
@@ -382,15 +456,13 @@ mod tests {
         };
         checkpoint.write(&mut cursor).ok().unwrap();
 
-        let entry = Entry {
-            entry: CrateEntry {
-                key: TestString("key".to_string()),
-                value: TestString("value".to_string()),
-            },
-        };
-        Entry::write(&entry.entry, &mut cursor).unwrap();
+        let entry: Entry<TestString, TestString, u16, u16> = Entry::new(CrateEntry::new(
+            TestString("key".to_string()),
+            TestString("value".to_string()),
+        ));
+        Entry::<TestString, TestString, u16, u16>::write(&entry.entry, &mut cursor).unwrap();
 
-        let chk_size = match Object::<TestString, TestString>::read(&data, 1)
+        let chk_size = match Object::<TestString, TestString, u32, u32>::read(&data, 1)
             .ok()
             .unwrap()
         {
@@ -403,7 +475,7 @@ mod tests {
             }
         };
 
-        match Object::<TestString, TestString>::read(&data[chk_size..], 1)
+        match Object::<TestString, TestString, u16, u16>::read(&data[chk_size..], 1)
             .ok()
             .unwrap()
         {
@@ -415,8 +487,10 @@ mod tests {
             }
         }
 
-        assert!(Object::<TestString, TestString>::read(&data[chk_size + 1..], 1).is_err());
-        assert!(Object::<TestString, TestString>::read(&data[0..0], 1).is_err());
+        assert!(
+            Object::<TestString, TestString, u16, u16>::read(&data[chk_size + 1..], 1).is_err()
+        );
+        assert!(Object::<TestString, TestString, u16, u16>::read(&data[0..0], 1).is_err());
     }
 
     #[derive(Ord, PartialOrd, Eq, PartialEq, Debug)]

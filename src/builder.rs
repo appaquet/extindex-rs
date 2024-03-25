@@ -20,7 +20,7 @@ use std::{
 
 use extsort::ExternalSorter;
 
-use crate::{data, utils::CountedWrite, Entry, Serializable};
+use crate::{data, entry::SortableEntry, size::DataSize, utils::CountedWrite, Entry, Serializable};
 
 const CHECKPOINT_WRITE_UPCOMING_WITHIN_DISTANCE: u64 = 3; // write checkpoint if we are within 3 items of the expected items
 const LEVELS_MINIMUM_ITEMS: u64 = 2;
@@ -28,30 +28,47 @@ const LEVELS_MINIMUM_ITEMS: u64 = 2;
 /// Index builder that creates a file index from any iterator. If the given
 /// iterator is already sorted, the `build_from_sorted` method can be used,
 /// while `build` can take any iterator. The `build` method will sort the
-/// iterator first using external sorting using the `extsort` crate.
+/// iterator first using external sorting with the `extsort` crate.
 ///
-/// As the index is being built, checkpoints / nodes are added to the file.
-/// These checkpoints / nodes are similar to the ones in a skip list, except
+/// As the index is being built, checkpoints/nodes are added to the file.
+/// These checkpoints/nodes are similar to the ones in a skip list, except
 /// that they point to previous checkpoints instead of pointing to next
 /// checkpoints.
-pub struct Builder<K, V>
+pub struct Builder<K, V, KS = u16, VS = u16>
 where
     K: Ord + Serializable,
     V: Serializable,
+    KS: DataSize,
+    VS: DataSize,
 {
     path: PathBuf,
     log_base: f64,
     extsort_segment_size: Option<usize>,
-    phantom: std::marker::PhantomData<(K, V)>,
+    phantom: std::marker::PhantomData<(K, KS, V, VS)>,
 }
 
-impl<K, V> Builder<K, V>
+impl<K, V> Builder<K, V, u16, u16>
 where
     K: Ord + Serializable,
     V: Serializable,
 {
-    /// Creates an index builder that will write to the given file path.
-    pub fn new<P: Into<PathBuf>>(path: P) -> Builder<K, V> {
+    /// Creates an index builder that will write to the given file path with
+    /// default key and value size of u16.
+    pub fn new<P: Into<PathBuf>>(path: P) -> Builder<K, V, u16, u16> {
+        Self::new_sized(path)
+    }
+}
+
+impl<K, V, KS, VS> Builder<K, V, KS, VS>
+where
+    K: Ord + Serializable,
+    V: Serializable,
+    KS: DataSize,
+    VS: DataSize,
+{
+    /// Creates an index builder that will write to the given file path with the
+    /// given key and value size.
+    pub fn new_sized<P: Into<PathBuf>>(path: P) -> Builder<K, V, KS, VS> {
         Builder {
             path: path.into(),
             log_base: 5.0,
@@ -60,13 +77,12 @@ where
         }
     }
 
-    /// Indicates approximate number of items we want per last-level checkpoint.
+    /// Indicates the approximate number of items we want per last-level checkpoint.
     ///
-    /// A higher value means that once a checkpoint in which we know the
-    /// item is after is found, we may need to iterate through up to
-    /// `log_base` items. A lower value will prevent creating too many levels
-    /// when the index gets bigger, but will require more scanning through more
-    /// entries to find the right one.
+    /// A higher value means that once a checkpoint is found in which we know the
+    /// item is after, we may need to iterate through up to `log_base` items.
+    /// A lower value will prevent creating too many levels when the index gets
+    /// bigger, but will require scanning through more entries to find the right one.
     ///
     /// Default value: 5.0
     pub fn with_log_base(mut self, log_base: f64) -> Self {
@@ -74,11 +90,11 @@ where
         self
     }
 
-    /// When using the `build` method from a non-sorted iterator, this value is
-    /// passed to the `extsort` crate to define how many items will be buffered
-    /// to memory before being flushed to disk.
+    /// When using the `build` method with a non-sorted iterator, this value is
+    /// passed to the `extsort` crate to define the number of items that will be
+    /// buffered in memory before being flushed to disk.
     ///
-    /// This number is the actual number of entries, not the sum of their size.
+    /// This number represents the actual count of entries, not the sum of their sizes.
     pub fn with_extsort_segment_size(mut self, max_size: usize) -> Self {
         self.extsort_segment_size = Some(max_size);
         self
@@ -89,8 +105,8 @@ where
     where
         I: Iterator<Item = Entry<K, V>>,
     {
-        let sort_dir = self.path.with_extension("tmp_sort");
-        std::fs::create_dir_all(&sort_dir)?;
+        let sort_dir = self.sort_dir();
+        std::fs::create_dir_all(&sort_dir).expect("couldn't create dit");
 
         let mut sorter = ExternalSorter::new().with_sort_dir(sort_dir);
 
@@ -98,16 +114,27 @@ where
             sorter = sorter.with_segment_size(segment_size);
         }
 
+        let iter = iter.map(|entry| SortableEntry::<K, V, KS, VS>::new(entry));
+
         let sorted_iter = sorter.sort(iter)?;
         let sorted_count = sorted_iter.sorted_count();
 
-        self.build_from_sorted(sorted_iter, sorted_count)
+        let sorted_iter = sorted_iter.map(|entry| Ok(entry?.into_inner()));
+
+        self.build_from_sorted_fallible(sorted_iter, sorted_count)
     }
 
-    /// Builds the index using a sorted iterator.
     pub fn build_from_sorted<I>(self, iter: I, nb_items: u64) -> Result<(), BuilderError>
     where
         I: Iterator<Item = Entry<K, V>>,
+    {
+        self.build_from_sorted_fallible(iter.map(Ok), nb_items)
+    }
+
+    /// Builds the index using a sorted iterator.
+    pub fn build_from_sorted_fallible<I>(self, iter: I, nb_items: u64) -> Result<(), BuilderError>
+    where
+        I: Iterator<Item = std::io::Result<Entry<K, V>>>,
     {
         let file = OpenOptions::new()
             .create(true)
@@ -132,6 +159,8 @@ where
             let mut entries_since_last_checkpoint = 0;
             let mut last_entry_position: u64 = 0;
             for entry in iter {
+                let entry = entry?;
+
                 last_entry_position = counted_output.written_count();
                 self.write_entry(&mut counted_output, &entry)?;
                 entries_since_last_checkpoint += 1;
@@ -166,6 +195,8 @@ where
             }
         }
 
+        let _ = std::fs::remove_dir_all(self.sort_dir());
+
         Ok(())
     }
 
@@ -182,7 +213,7 @@ where
         output: &mut W,
         entry: &Entry<K, V>,
     ) -> Result<(), BuilderError> {
-        data::Entry::write(entry, output)?;
+        data::Entry::<K, V, KS, VS>::write(entry, output)?;
         Ok(())
     }
 
@@ -218,6 +249,14 @@ where
         }
 
         Ok(())
+    }
+
+    /// Returns the directory path where the sorted file will be written.
+    ///
+    /// The directory name will be the same as the index file with an additional
+    /// `.tmp_sort` extension.
+    fn sort_dir(&self) -> PathBuf {
+        self.path.with_extension("tmp_sort")
     }
 }
 

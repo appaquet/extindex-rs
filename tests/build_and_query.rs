@@ -108,7 +108,7 @@ fn empty_index() {
 }
 
 #[test]
-fn fuzz_build_read_1_to_650_items() {
+fn fuzz_build_read_u16_u16_1_to_650_items() {
     let index_file = tempfile::NamedTempFile::new().unwrap();
 
     // Test up to 4 levels (log5(650) = 4)
@@ -117,6 +117,24 @@ fn fuzz_build_read_1_to_650_items() {
         builder.build(create_entries(nb_entries, "")).unwrap();
 
         let index = Reader::<String, String>::open(index_file.path()).unwrap();
+        for i in 0..nb_entries {
+            index.find(&format!("key:{}", i)).unwrap().unwrap();
+
+            index.find_first(&format!("key:{}", i)).unwrap().unwrap();
+        }
+    }
+}
+
+#[test]
+fn fuzz_build_read_u32_u32_1_to_650_items() {
+    let index_file = tempfile::NamedTempFile::new().unwrap();
+
+    // Test up to 4 levels (log5(650) = 4)
+    for nb_entries in (1..=650).step_by(13) {
+        let builder = Builder::<_, _, u32, u32>::new_sized(index_file.path());
+        builder.build(create_entries(nb_entries, "")).unwrap();
+
+        let index = Reader::<String, String, u32, u32>::open_sized(index_file.path()).unwrap();
         for i in 0..nb_entries {
             index.find(&format!("key:{}", i)).unwrap().unwrap();
 
