@@ -27,8 +27,6 @@ pub const OBJECT_ID_ENTRY: u8 = 0;
 pub const OBJECT_ID_CHECKPOINT: u8 = 1;
 
 pub const MAX_LEVELS: usize = 256;
-pub const MAX_KEY_SIZE_BYTES: usize = 1024;
-pub const MAX_VALUE_SIZE_BYTES: usize = 65000;
 
 /// Header of the index.
 ///
