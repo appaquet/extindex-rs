@@ -268,7 +268,7 @@ where
         let value = <V as Serializable>::deserialize(data_cursor, data_size)?;
 
         let entry_file_size = 1 + // obj id
-            KS::size() + VS::size() +  // key and value size bytes
+            KS::size() + VS::size() +
             key_size + data_size;
         let entry = CrateEntry::new_sized(key, value);
         Ok((Entry::new(entry), entry_file_size))
