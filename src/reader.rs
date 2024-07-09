@@ -54,11 +54,11 @@ where
     /// given key and value size.
     pub fn open_sized<P: AsRef<Path>>(path: P) -> Result<Reader<K, V, KS, VS>, ReaderError> {
         let file_meta = std::fs::metadata(path.as_ref())?;
-        if file_meta.len() > std::usize::MAX as u64 {
+        if file_meta.len() > usize::MAX as u64 {
             error!(
                 "Tried to open an index file bigger than usize ({} > {})",
                 file_meta.len(),
-                std::usize::MAX
+                usize::MAX
             );
             return Err(ReaderError::TooBig);
         }
@@ -92,10 +92,10 @@ where
     /// Finds any entry matching the given needle. This means that there is no
     /// guarantee on which entry is returned first if the key is present
     /// multiple times.
-    pub fn find<Q: ?Sized>(&self, needle: &Q) -> Result<Option<Entry<K, V>>, ReaderError>
+    pub fn find<Q>(&self, needle: &Q) -> Result<Option<Entry<K, V>>, ReaderError>
     where
         K: Borrow<Q>,
-        Q: Ord,
+        Q: Ord + ?Sized,
     {
         Ok(self
             .find_entry_position(needle, false)?
@@ -107,10 +107,10 @@ where
     ///
     /// Warning: Make sure that you sort by key + value and use stable sorting
     /// if you care in which order values are returned.
-    pub fn find_first<Q: ?Sized>(&self, needle: &Q) -> Result<Option<Entry<K, V>>, ReaderError>
+    pub fn find_first<Q>(&self, needle: &Q) -> Result<Option<Entry<K, V>>, ReaderError>
     where
         K: Borrow<Q>,
-        Q: Ord,
+        Q: Ord + ?Sized,
     {
         Ok(self
             .find_entry_position(needle, true)?
@@ -135,13 +135,13 @@ where
     ///
     /// Warning: Make sure that you sort by key + value and use stable sorting
     /// if you care in which order values are returned.
-    pub fn iter_from<'a, Q: ?Sized>(
+    pub fn iter_from<'a, Q>(
         &'a self,
         needle: &Q,
     ) -> Result<impl Iterator<Item = Entry<K, V>> + 'a, ReaderError>
     where
         K: Borrow<Q>,
-        Q: Ord,
+        Q: Ord + ?Sized,
     {
         let first_entry = self.find_entry_position(needle, true)?;
         let from_position = match first_entry {
@@ -216,14 +216,14 @@ where
         }
     }
 
-    fn find_entry_position<Q: ?Sized>(
+    fn find_entry_position<Q>(
         &self,
         needle: &Q,
         find_first_match: bool,
     ) -> Result<Option<FileEntry<K, V>>, ReaderError>
     where
         K: Borrow<Q>,
-        Q: Ord + PartialEq + Eq,
+        Q: Ord + PartialEq + Eq + ?Sized,
     {
         let Some(last_checkpoint_position) = self.last_checkpoint_position else {
             return Ok(None);
@@ -322,14 +322,14 @@ where
         iter
     }
 
-    fn sequential_find_entry<Q: ?Sized>(
+    fn sequential_find_entry<Q>(
         &self,
         from_position: Option<usize>,
         needle: &Q,
     ) -> Option<FileEntry<K, V>>
     where
         K: Borrow<Q>,
-        Q: Ord + PartialEq + Eq,
+        Q: Ord + PartialEq + Eq + ?Sized,
     {
         self.iterate_entries_from_position(from_position)
             .take_while(|read_entry| read_entry.entry.key.borrow() <= needle)
