@@ -79,7 +79,7 @@ where
     VS: DataSize,
 {
     Entry(Entry<K, V, KS, VS>),
-    Checkpoint(Checkpoint),
+    Checkpoint,
 }
 
 type ObjectAndSize<K, V, KS, VS> = (Object<K, V, KS, VS>, usize);
@@ -100,8 +100,8 @@ where
         }
 
         if data[0] == OBJECT_ID_CHECKPOINT {
-            let (chk, size) = Checkpoint::read_slice(data, nb_levels)?;
-            Ok((Object::Checkpoint(chk), size))
+            let size = Checkpoint::size(nb_levels);
+            Ok((Object::Checkpoint, size))
         } else if data[0] == OBJECT_ID_ENTRY {
             let (entry, size) = Entry::read_slice(data)?;
             Ok((Object::Entry(entry), size))
@@ -128,11 +128,19 @@ pub struct CheckpointLevel {
 }
 
 impl Checkpoint {
-    pub fn write<W: Write>(&self, output: &mut W) -> Result<(), SerializationError> {
+    pub fn write<W, L>(
+        output: &mut W,
+        entry_position: u64,
+        levels: L,
+    ) -> Result<(), SerializationError>
+    where
+        W: Write,
+        L: IntoIterator<Item = CheckpointLevel>,
+    {
         output.write_u8(OBJECT_ID_CHECKPOINT)?;
-        output.write_u64::<LittleEndian>(self.entry_position)?;
+        output.write_u64::<LittleEndian>(entry_position)?;
 
-        for level in &self.levels {
+        for level in levels {
             output.write_u64::<LittleEndian>(level.next_position)?;
         }
 
@@ -334,13 +342,15 @@ mod tests {
     fn checkpoint_write_read() {
         let mut data = Vec::new();
 
-        let checkpoint = Checkpoint {
-            entry_position: 1234,
-            levels: smallvec::smallvec![CheckpointLevel {
+        Checkpoint::write(
+            &mut data,
+            1234,
+            vec![CheckpointLevel {
                 next_position: 1000,
             }],
-        };
-        checkpoint.write(&mut data).ok().unwrap();
+        )
+        .ok()
+        .unwrap();
 
         let (read_checkpoint, size) = Checkpoint::read_slice(&data, 1).ok().unwrap();
         assert_eq!(read_checkpoint.entry_position, 1234);
@@ -448,13 +458,15 @@ mod tests {
         let mut data = Vec::new();
         let mut cursor = Cursor::new(&mut data);
 
-        let checkpoint = Checkpoint {
-            entry_position: 1234,
-            levels: smallvec::smallvec![CheckpointLevel {
+        Checkpoint::write(
+            &mut cursor,
+            1234,
+            vec![CheckpointLevel {
                 next_position: 1000,
             }],
-        };
-        checkpoint.write(&mut cursor).ok().unwrap();
+        )
+        .ok()
+        .unwrap();
 
         let entry: Entry<TestString, TestString, u16, u16> = Entry::new(CrateEntry::new(
             TestString("key".to_string()),
@@ -466,10 +478,7 @@ mod tests {
             .ok()
             .unwrap()
         {
-            (Object::Checkpoint(c), size) => {
-                assert_eq!(c.entry_position, 1234);
-                size
-            }
+            (Object::Checkpoint, size) => size,
             _ => {
                 panic!("Got an invalid object type");
             }

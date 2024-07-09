@@ -225,17 +225,10 @@ where
         levels: &mut [Level],
         force_all_levels: bool,
     ) -> Result<(), BuilderError> {
-        let seri_levels = levels
-            .iter()
-            .map(|level| data::CheckpointLevel {
-                next_position: level.last_item.unwrap_or(0),
-            })
-            .collect();
-        let seri_checkpoint = data::Checkpoint {
-            entry_position,
-            levels: seri_levels,
-        };
-        seri_checkpoint.write(output)?;
+        let seri_levels = levels.iter().map(|level| data::CheckpointLevel {
+            next_position: level.last_item.unwrap_or(0),
+        });
+        data::Checkpoint::write(output, entry_position, seri_levels)?;
 
         for level in levels.iter_mut() {
             if force_all_levels

@@ -202,7 +202,7 @@ where
                 data::Object::<K, V, KS, VS>::read(&self.data[from_position..], self.nb_levels)?;
 
             match objects {
-                data::Object::Checkpoint(_) => {
+                data::Object::Checkpoint => {
                     return self.read_checkpoint_and_key(from_position).map(Some);
                 }
                 data::Object::Entry(_) => {
@@ -372,7 +372,7 @@ where
             .ok()?;
             self.current_position += read_size;
             match read_object {
-                data::Object::Checkpoint(_) => continue,
+                data::Object::Checkpoint => continue,
                 data::Object::Entry(entry) => {
                     return Some(FileEntry {
                         entry: entry.entry,
