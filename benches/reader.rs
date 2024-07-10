@@ -33,6 +33,7 @@ fn bench_random_access(c: &mut Criterion) {
 
     let builder = Builder::new(index_file).with_extsort_segment_size(200_000);
     builder
+        .with_log_base(5)
         .build(create_unknown_size_entries(1_000_000))
         .unwrap();
 

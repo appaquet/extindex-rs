@@ -163,13 +163,12 @@ where
         let (serialized_checkpoint, _read_size) =
             data::Checkpoint::read_slice(&self.data[checkpoint_position..], self.nb_levels)?;
 
-        let entry_file_position = serialized_checkpoint.entry_position() as usize;
+        let entry_file_position = serialized_checkpoint.entry_position();
         let (entry_key, _entry_size) =
             data::Entry::<K, V, KS, VS>::read_key(&self.data[entry_file_position..])?;
 
         Ok(Checkpoint {
             entry_key,
-            entry_file_position,
             serialized_checkpoint,
         })
     }
@@ -250,7 +249,7 @@ where
             if needle_cmp == Ordering::Equal && !find_first_match {
                 // we found a match, and we don't care if it's the first one or not
                 return Ok(Some(
-                    self.read_entry(current.checkpoint.entry_file_position)?,
+                    self.read_entry(current.checkpoint.get_entry_position())?,
                 ));
             } else if needle_cmp == Ordering::Equal || needle_cmp == Ordering::Less {
                 // we found a match, but we want to make sure it's the first one,
@@ -277,7 +276,7 @@ where
                 if current.level == self.nb_levels - 1 {
                     // we reached last level, we need to iterate to entry
                     return Ok(self.sequential_find_entry(
-                        Some(current.checkpoint.entry_file_position),
+                        Some(current.checkpoint.get_entry_position()),
                         needle,
                     ));
                 } else if let Some(previous_find) = stack.front_mut() {
@@ -453,7 +452,7 @@ where
             .reader
             .iterate_entries_from_position(Some(prev_checkpoint))
         {
-            if entry.position > next_checkpoint.entry_file_position {
+            if entry.position > next_checkpoint.get_entry_position() {
                 break;
             }
 
@@ -538,7 +537,6 @@ where
     K: Ord + Serializable,
 {
     entry_key: K,
-    entry_file_position: usize,
     serialized_checkpoint: data::Checkpoint<'d>,
 }
 
@@ -546,6 +544,11 @@ impl<'d, K> Checkpoint<'d, K>
 where
     K: Ord + Serializable,
 {
+    #[inline]
+    fn get_entry_position(&self) -> usize {
+        self.serialized_checkpoint.entry_position()
+    }
+
     /// Gets the position of the next checkpoint at the given level.
     ///
     /// The position of that checkpoint will be lower since the index is built from left to right
@@ -554,7 +557,7 @@ where
         Ok(self
             .serialized_checkpoint
             .get_next_checkpoint(level)?
-            .next_position as usize)
+            .next_position)
     }
 
     /// Gets the position of the last checkpoint, given the number of levels.
@@ -564,7 +567,7 @@ where
         Ok(self
             .serialized_checkpoint
             .get_next_checkpoint(nb_levels - 1)?
-            .next_position as usize)
+            .next_position)
     }
 }
 

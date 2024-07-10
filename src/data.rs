@@ -129,19 +129,19 @@ where
 /// There is always at least 1 level, and the last one is the more granular. The
 /// highest the level, the bigger the jumps are in the index.
 pub struct Checkpoint<'d> {
-    entry_position: u64,
+    entry_position: usize,
     data: &'d [u8],
 }
 
 #[derive(Clone, Copy)]
 pub struct CheckpointLevel {
-    pub next_position: u64,
+    pub next_position: usize,
 }
 
 impl<'d> Checkpoint<'d> {
     pub fn write<W, L>(
         output: &mut W,
-        entry_position: u64,
+        entry_position: usize,
         levels: L,
     ) -> Result<(), SerializationError>
     where
@@ -149,10 +149,10 @@ impl<'d> Checkpoint<'d> {
         L: IntoIterator<Item = CheckpointLevel>,
     {
         output.write_u8(OBJECT_ID_CHECKPOINT)?;
-        output.write_u64::<LittleEndian>(entry_position)?;
+        output.write_u64::<LittleEndian>(entry_position as u64)?;
 
         for level in levels {
-            output.write_u64::<LittleEndian>(level.next_position)?;
+            output.write_u64::<LittleEndian>(level.next_position as u64)?;
         }
 
         Ok(())
@@ -163,13 +163,9 @@ impl<'d> Checkpoint<'d> {
         nb_levels: usize,
     ) -> Result<(Checkpoint, usize), SerializationError> {
         let mut checkpoint_cursor = Cursor::new(data);
-        let item_id = checkpoint_cursor.read_u8()?;
-        if item_id != OBJECT_ID_CHECKPOINT {
-            return Err(SerializationError::InvalidObjectType);
-        }
+        checkpoint_cursor.set_position(1); // object id
 
-        let entry_position = checkpoint_cursor.read_u64::<LittleEndian>()?;
-
+        let entry_position = checkpoint_cursor.read_u64::<LittleEndian>()? as usize;
         let next_checkpoints_offset = checkpoint_cursor.position() as usize;
 
         Ok((
@@ -187,7 +183,7 @@ impl<'d> Checkpoint<'d> {
             (nb_levels * 8)
     }
 
-    pub fn entry_position(&self) -> u64 {
+    pub fn entry_position(&self) -> usize {
         self.entry_position
     }
 
@@ -197,7 +193,7 @@ impl<'d> Checkpoint<'d> {
     /// and we are seeking backward.
     pub fn get_next_checkpoint(&self, level: usize) -> Result<CheckpointLevel, SerializationError> {
         let level_offset = level * 8;
-        let next_position = (&self.data[level_offset..]).read_u64::<LittleEndian>()?;
+        let next_position = (&self.data[level_offset..]).read_u64::<LittleEndian>()? as usize;
 
         Ok(CheckpointLevel { next_position })
     }
