@@ -157,11 +157,11 @@ where
             let checkpoint_interval = levels.last().unwrap().expected_items;
 
             let mut entries_since_last_checkpoint = 0;
-            let mut last_entry_position: u64 = 0;
+            let mut last_entry_position: usize = 0;
             for entry in iter {
                 let entry = entry?;
 
-                last_entry_position = counted_output.written_count();
+                last_entry_position = counted_output.written_count() as usize;
                 self.write_entry(&mut counted_output, &entry)?;
                 entries_since_last_checkpoint += 1;
 
@@ -170,7 +170,7 @@ where
                         level.current_items += entries_since_last_checkpoint;
                     }
 
-                    let current_position = counted_output.written_count();
+                    let current_position = counted_output.written_count() as usize;
                     self.write_checkpoint(
                         &mut counted_output,
                         current_position,
@@ -184,7 +184,7 @@ where
 
             if entries_since_last_checkpoint > 0 {
                 // write one last checkpoint
-                let current_position = counted_output.written_count();
+                let current_position = counted_output.written_count() as usize;
                 self.write_checkpoint(
                     &mut counted_output,
                     current_position,
@@ -220,22 +220,15 @@ where
     fn write_checkpoint<W: Write>(
         &self,
         output: &mut W,
-        current_position: u64,
-        entry_position: u64,
+        current_position: usize,
+        entry_position: usize,
         levels: &mut [Level],
         force_all_levels: bool,
     ) -> Result<(), BuilderError> {
-        let seri_levels = levels
-            .iter()
-            .map(|level| data::CheckpointLevel {
-                next_position: level.last_item.unwrap_or(0),
-            })
-            .collect();
-        let seri_checkpoint = data::Checkpoint {
-            entry_position,
-            levels: seri_levels,
-        };
-        seri_checkpoint.write(output)?;
+        let seri_levels = levels.iter().map(|level| data::CheckpointLevel {
+            next_position: level.last_item_position.unwrap_or(0),
+        });
+        data::Checkpoint::write(output, entry_position, seri_levels)?;
 
         for level in levels.iter_mut() {
             if force_all_levels
@@ -243,7 +236,7 @@ where
                 || (level.expected_items - level.current_items)
                     <= CHECKPOINT_WRITE_UPCOMING_WITHIN_DISTANCE
             {
-                level.last_item = Some(current_position);
+                level.last_item_position = Some(current_position);
                 level.current_items = 0;
             }
         }
@@ -279,7 +272,7 @@ fn levels_for_items_count(nb_items: u64, log_base: f64) -> Vec<Level> {
         levels.push(Level {
             expected_items: max_items,
             current_items: 0,
-            last_item: None,
+            last_item_position: None,
         });
         max_items /= log_base_u64;
     }
@@ -292,7 +285,7 @@ fn levels_for_items_count(nb_items: u64, log_base: f64) -> Vec<Level> {
 struct Level {
     expected_items: u64,
     current_items: u64,
-    last_item: Option<u64>,
+    last_item_position: Option<usize>,
 }
 
 /// Index building related errors.

@@ -15,7 +15,6 @@
 use std::io::{Cursor, Read, Write};
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use smallvec::SmallVec;
 
 use crate::{size::DataSize, Entry as CrateEntry, Serializable};
 
@@ -78,8 +77,9 @@ where
     KS: DataSize,
     VS: DataSize,
 {
-    Entry(Entry<K, V, KS, VS>),
-    Checkpoint(Checkpoint),
+    FullEntry(Entry<K, V, KS, VS>),
+    EntryKey(K),
+    Checkpoint,
 }
 
 type ObjectAndSize<K, V, KS, VS> = (Object<K, V, KS, VS>, usize);
@@ -91,20 +91,30 @@ where
     KS: DataSize,
     VS: DataSize,
 {
+    /// Read an object (either an entry or a checkpoint) from a byte slice.
+    ///
+    /// The `full_entries` parameter is used to determine if the entry should be read in full or
+    /// only the key.
     pub fn read(
         data: &[u8],
         nb_levels: usize,
+        full_entries: bool,
     ) -> Result<ObjectAndSize<K, V, KS, VS>, SerializationError> {
         if data.is_empty() {
             return Err(SerializationError::OutOfBound);
         }
 
         if data[0] == OBJECT_ID_CHECKPOINT {
-            let (chk, size) = Checkpoint::read_slice(data, nb_levels)?;
-            Ok((Object::Checkpoint(chk), size))
+            let size = Checkpoint::get_size(nb_levels);
+            Ok((Object::Checkpoint, size))
         } else if data[0] == OBJECT_ID_ENTRY {
-            let (entry, size) = Entry::read_slice(data)?;
-            Ok((Object::Entry(entry), size))
+            if full_entries {
+                let (entry, size) = Entry::read_slice(data)?;
+                Ok((Object::FullEntry(entry), size))
+            } else {
+                let (key, size) = Entry::<K, V, KS, VS>::read_key(data)?;
+                Ok((Object::EntryKey(key), size))
+            }
         } else {
             Err(SerializationError::InvalidObjectType)
         }
@@ -118,22 +128,31 @@ where
 ///
 /// There is always at least 1 level, and the last one is the more granular. The
 /// highest the level, the bigger the jumps are in the index.
-pub struct Checkpoint {
-    pub entry_position: u64,
-    pub levels: SmallVec<[CheckpointLevel; 10]>,
+pub struct Checkpoint<'d> {
+    entry_position: usize,
+    data: &'d [u8],
 }
 
+#[derive(Clone, Copy)]
 pub struct CheckpointLevel {
-    pub next_position: u64,
+    pub next_position: usize,
 }
 
-impl Checkpoint {
-    pub fn write<W: Write>(&self, output: &mut W) -> Result<(), SerializationError> {
+impl<'d> Checkpoint<'d> {
+    pub fn write<W, L>(
+        output: &mut W,
+        entry_position: usize,
+        levels: L,
+    ) -> Result<(), SerializationError>
+    where
+        W: Write,
+        L: IntoIterator<Item = CheckpointLevel>,
+    {
         output.write_u8(OBJECT_ID_CHECKPOINT)?;
-        output.write_u64::<LittleEndian>(self.entry_position)?;
+        output.write_u64::<LittleEndian>(entry_position as u64)?;
 
-        for level in &self.levels {
-            output.write_u64::<LittleEndian>(level.next_position)?;
+        for level in levels {
+            output.write_u64::<LittleEndian>(level.next_position as u64)?;
         }
 
         Ok(())
@@ -144,33 +163,39 @@ impl Checkpoint {
         nb_levels: usize,
     ) -> Result<(Checkpoint, usize), SerializationError> {
         let mut checkpoint_cursor = Cursor::new(data);
-        let item_id = checkpoint_cursor.read_u8()?;
-        if item_id != OBJECT_ID_CHECKPOINT {
-            return Err(SerializationError::InvalidObjectType);
-        }
+        checkpoint_cursor.set_position(1); // object id
 
-        let entry_position = checkpoint_cursor.read_u64::<LittleEndian>()?;
-        let mut levels = SmallVec::new();
-        for _i in 0..nb_levels {
-            let previous_checkpoint_position = checkpoint_cursor.read_u64::<LittleEndian>()?;
-            levels.push(CheckpointLevel {
-                next_position: previous_checkpoint_position,
-            })
-        }
+        let entry_position = checkpoint_cursor.read_u64::<LittleEndian>()? as usize;
+        let next_checkpoints_offset = checkpoint_cursor.position() as usize;
 
         Ok((
             Checkpoint {
                 entry_position,
-                levels,
+                data: &data[next_checkpoints_offset..],
             },
-            Self::size(nb_levels),
+            Self::get_size(nb_levels),
         ))
     }
 
-    pub fn size(nb_levels: usize) -> usize {
+    pub fn get_size(nb_levels: usize) -> usize {
         1 + /*id*/
             8 + /*entry_pos*/
             (nb_levels * 8)
+    }
+
+    pub fn entry_position(&self) -> usize {
+        self.entry_position
+    }
+
+    /// Gets the position of the next checkpoint at the given level.
+    ///
+    /// The position of that checkpoint will be lower since the index is built from left to right
+    /// and we are seeking backward.
+    pub fn get_next_checkpoint(&self, level: usize) -> Result<CheckpointLevel, SerializationError> {
+        let level_offset = level * 8;
+        let next_position = (&self.data[level_offset..]).read_u64::<LittleEndian>()? as usize;
+
+        Ok(CheckpointLevel { next_position })
     }
 }
 
@@ -268,11 +293,13 @@ where
         let entry_file_size = 1 + // obj id
             KS::size() + VS::size() +
             key_size + data_size;
+
         let entry = CrateEntry::new_sized(key, value);
+
         Ok((Entry::new(entry), entry_file_size))
     }
 
-    pub fn read_key(data: &[u8]) -> Result<K, SerializationError> {
+    pub fn read_key(data: &[u8]) -> Result<(K, usize), SerializationError> {
         let mut data_cursor = Cursor::new(data);
 
         let item_id = data_cursor.read_u8()?;
@@ -281,10 +308,14 @@ where
         }
 
         let key_size = KS::read(&mut data_cursor)?;
-        let _data_size = VS::read(&mut data_cursor)?;
+        let data_size = VS::read(&mut data_cursor)?;
+
+        let entry_file_size = 1 + // obj id
+            KS::size() + VS::size() +
+            key_size + data_size;
 
         let key = <K as Serializable>::deserialize(&mut data_cursor, key_size)?;
-        Ok(key)
+        Ok((key, entry_file_size))
     }
 }
 
@@ -334,20 +365,23 @@ mod tests {
     fn checkpoint_write_read() {
         let mut data = Vec::new();
 
-        let checkpoint = Checkpoint {
-            entry_position: 1234,
-            levels: smallvec::smallvec![CheckpointLevel {
+        Checkpoint::write(
+            &mut data,
+            1234,
+            vec![CheckpointLevel {
                 next_position: 1000,
             }],
-        };
-        checkpoint.write(&mut data).ok().unwrap();
+        )
+        .ok()
+        .unwrap();
 
-        let (read_checkpoint, size) = Checkpoint::read_slice(&data, 1).ok().unwrap();
-        assert_eq!(read_checkpoint.entry_position, 1234);
-        assert_eq!(read_checkpoint.levels.len(), 1);
-        assert_eq!(read_checkpoint.levels[0].next_position, 1000);
-        assert_eq!(Checkpoint::size(1), data.len());
+        let (checkpoint, size) = Checkpoint::read_slice(&data, 1).ok().unwrap();
+        assert_eq!(checkpoint.entry_position, 1234);
         assert_eq!(size, data.len());
+        assert_eq!(Checkpoint::get_size(1), data.len());
+
+        let next_checkpoint = checkpoint.get_next_checkpoint(0).unwrap();
+        assert_eq!(next_checkpoint.next_position, 1000);
     }
 
     #[test]
@@ -367,10 +401,11 @@ mod tests {
         assert_eq!(read_entry.entry.value, TestString("value".to_string()));
         assert_eq!(size, data.len());
 
-        let read_entry_key = Entry::<TestString, TestString, u16, u16>::read_key(&data)
+        let (read_entry_key, size) = Entry::<TestString, TestString, u16, u16>::read_key(&data)
             .ok()
             .unwrap();
         assert_eq!(read_entry_key, TestString("key".to_string()));
+        assert_eq!(size, data.len());
     }
 
     #[test]
@@ -390,10 +425,11 @@ mod tests {
         assert_eq!(read_entry.entry.value, TestString("value".to_string()));
         assert_eq!(size, data.len());
 
-        let read_entry_key = Entry::<TestString, TestString, u32, u32>::read_key(&data)
+        let (read_entry_key, size) = Entry::<TestString, TestString, u32, u32>::read_key(&data)
             .ok()
             .unwrap();
         assert_eq!(read_entry_key, TestString("key".to_string()));
+        assert_eq!(size, data.len());
     }
 
     #[test]
@@ -413,10 +449,12 @@ mod tests {
         assert_eq!(read_entry.entry.value, UnsizedString("value".to_string()));
         assert_eq!(size, data.len());
 
-        let read_entry_key = Entry::<UnsizedString, UnsizedString, u16, u16>::read_key(&data)
-            .ok()
-            .unwrap();
+        let (read_entry_key, size) =
+            Entry::<UnsizedString, UnsizedString, u16, u16>::read_key(&data)
+                .ok()
+                .unwrap();
         assert_eq!(read_entry_key, UnsizedString("key".to_string()));
+        assert_eq!(size, data.len());
     }
 
     #[test]
@@ -437,10 +475,12 @@ mod tests {
         assert_eq!(read_entry.entry.value, UnsizedString("value".to_string()));
         assert_eq!(size, data.len());
 
-        let read_entry_key = Entry::<UnsizedString, UnsizedString, u32, u32>::read_key(&data)
-            .ok()
-            .unwrap();
+        let (read_entry_key, size) =
+            Entry::<UnsizedString, UnsizedString, u32, u32>::read_key(&data)
+                .ok()
+                .unwrap();
         assert_eq!(read_entry_key, UnsizedString("key".to_string()));
+        assert_eq!(size, data.len());
     }
 
     #[test]
@@ -448,13 +488,15 @@ mod tests {
         let mut data = Vec::new();
         let mut cursor = Cursor::new(&mut data);
 
-        let checkpoint = Checkpoint {
-            entry_position: 1234,
-            levels: smallvec::smallvec![CheckpointLevel {
+        Checkpoint::write(
+            &mut cursor,
+            1234,
+            vec![CheckpointLevel {
                 next_position: 1000,
             }],
-        };
-        checkpoint.write(&mut cursor).ok().unwrap();
+        )
+        .ok()
+        .unwrap();
 
         let entry: Entry<TestString, TestString, u16, u16> = Entry::new(CrateEntry::new(
             TestString("key".to_string()),
@@ -462,24 +504,21 @@ mod tests {
         ));
         Entry::<TestString, TestString, u16, u16>::write(&entry.entry, &mut cursor).unwrap();
 
-        let chk_size = match Object::<TestString, TestString, u32, u32>::read(&data, 1)
+        let chk_size = match Object::<TestString, TestString, u32, u32>::read(&data, 1, true)
             .ok()
             .unwrap()
         {
-            (Object::Checkpoint(c), size) => {
-                assert_eq!(c.entry_position, 1234);
-                size
-            }
+            (Object::Checkpoint, size) => size,
             _ => {
                 panic!("Got an invalid object type");
             }
         };
 
-        match Object::<TestString, TestString, u16, u16>::read(&data[chk_size..], 1)
+        match Object::<TestString, TestString, u16, u16>::read(&data[chk_size..], 1, true)
             .ok()
             .unwrap()
         {
-            (Object::Entry(e), _size) => {
+            (Object::FullEntry(e), _size) => {
                 assert_eq!(e.entry.key, TestString("key".to_string()));
             }
             _ => {
@@ -487,10 +526,23 @@ mod tests {
             }
         }
 
+        match Object::<TestString, TestString, u16, u16>::read(&data[chk_size..], 1, false)
+            .ok()
+            .unwrap()
+        {
+            (Object::EntryKey(key), _size) => {
+                assert_eq!(key, TestString("key".to_string()));
+            }
+            _ => {
+                panic!("Got an invalid object type");
+            }
+        }
+
         assert!(
-            Object::<TestString, TestString, u16, u16>::read(&data[chk_size + 1..], 1).is_err()
+            Object::<TestString, TestString, u16, u16>::read(&data[chk_size + 1..], 1, true)
+                .is_err()
         );
-        assert!(Object::<TestString, TestString, u16, u16>::read(&data[0..0], 1).is_err());
+        assert!(Object::<TestString, TestString, u16, u16>::read(&data[0..0], 1, true).is_err());
     }
 
     #[derive(Ord, PartialOrd, Eq, PartialEq, Debug)]
