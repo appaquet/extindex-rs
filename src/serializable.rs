@@ -16,7 +16,7 @@ pub trait Serializable: Send + Sized {
 
 impl Serializable for String {
     fn size(&self) -> Option<usize> {
-        Some(self.as_bytes().len())
+        Some(self.len())
     }
 
     fn serialize<W: Write>(&self, write: &mut W) -> Result<(), std::io::Error> {
@@ -51,7 +51,7 @@ where
             bincode::config::standard(),
         )
         .map(|_| ())
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
+        .map_err(std::io::Error::other)
     }
 
     fn deserialize<R: Read>(data: &mut R, _size: usize) -> Result<Self, std::io::Error> {
@@ -59,7 +59,7 @@ where
             data,
             bincode::config::standard(),
         )
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
+        .map_err(std::io::Error::other)
         .map(|compat| SerdeWrapper(compat.0))
     }
 }

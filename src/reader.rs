@@ -159,7 +159,7 @@ where
     fn read_checkpoint_and_key(
         &self,
         checkpoint_position: usize,
-    ) -> Result<Checkpoint<K>, ReaderError> {
+    ) -> Result<Checkpoint<'_, K>, ReaderError> {
         let (serialized_checkpoint, _read_size) =
             data::Checkpoint::read_slice(&self.data[checkpoint_position..], self.nb_levels)?;
 
@@ -185,7 +185,7 @@ where
     fn find_next_checkpoint_from_position(
         &self,
         from_position: usize,
-    ) -> Result<Option<Checkpoint<K>>, ReaderError> {
+    ) -> Result<Option<Checkpoint<'_, K>>, ReaderError> {
         let Some(last_checkpoint_position) = self.last_checkpoint_position else {
             return Ok(None);
         };
@@ -292,7 +292,7 @@ where
     fn iterate_entries_from_position(
         &self,
         from_position: Option<usize>,
-    ) -> FileEntryIterator<K, V, KS, VS> {
+    ) -> FileEntryIterator<'_, K, V, KS, VS> {
         let from_position = from_position.unwrap_or_else(data::Header::size);
         FileEntryIterator {
             reader: self,
@@ -303,7 +303,7 @@ where
     fn reverse_iterate_entries_from_position(
         &self,
         from_position: Option<usize>,
-    ) -> ReverseFileEntryIterator<K, V, KS, VS> {
+    ) -> ReverseFileEntryIterator<'_, K, V, KS, VS> {
         let (next_checkpoint, from_position) =
             if let Some(last_checkpoint_position) = self.last_checkpoint_position {
                 let from_position = from_position.unwrap_or(last_checkpoint_position);

@@ -161,7 +161,7 @@ impl<'d> Checkpoint<'d> {
     pub fn read_slice(
         data: &[u8],
         nb_levels: usize,
-    ) -> Result<(Checkpoint, usize), SerializationError> {
+    ) -> Result<(Checkpoint<'_>, usize), SerializationError> {
         let mut checkpoint_cursor = Cursor::new(data);
         checkpoint_cursor.set_position(1); // object id
 
@@ -338,7 +338,7 @@ impl SerializationError {
     pub fn into_io(self) -> std::io::Error {
         match self {
             SerializationError::IO(err) => err,
-            other => std::io::Error::new(std::io::ErrorKind::Other, format!("{other:?}")),
+            other => std::io::Error::other(format!("{other:?}")),
         }
     }
 }
