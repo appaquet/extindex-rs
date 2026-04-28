@@ -45,19 +45,19 @@ where
     }
 
     fn serialize<W: Write>(&self, write: &mut W) -> Result<(), std::io::Error> {
-        bincode::encode_into_std_write(
-            bincode::serde::Compat(&self.0),
+        bincode_next::encode_into_std_write(
+            bincode_next::serde::Compat(&self.0),
             write,
-            bincode::config::standard(),
+            bincode_next::config::standard(),
         )
         .map(|_| ())
         .map_err(std::io::Error::other)
     }
 
     fn deserialize<R: Read>(data: &mut R, _size: usize) -> Result<Self, std::io::Error> {
-        bincode::decode_from_std_read::<bincode::serde::Compat<T>, _, _>(
+        bincode_next::decode_from_std_read::<bincode_next::serde::Compat<T>, _, _>(
             data,
-            bincode::config::standard(),
+            bincode_next::config::standard(),
         )
         .map_err(std::io::Error::other)
         .map(|compat| SerdeWrapper(compat.0))

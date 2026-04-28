@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 
 use std::{
     io::{Read, Write},
@@ -49,7 +49,7 @@ fn bench_random_access(c: &mut Criterion) {
     for key in keys {
         group.bench_with_input(BenchmarkId::new("key", &key), &key, |b, key| {
             b.iter(|| {
-                black_box(index.find(key).unwrap());
+                std::hint::black_box(index.find(key).unwrap());
             });
         });
     }
@@ -74,37 +74,37 @@ fn bench_iter(c: &mut Criterion) {
 
     group.bench_function("iter first entry", |b| {
         b.iter(|| {
-            black_box(index.iter().next().unwrap());
+            std::hint::black_box(index.iter().next().unwrap());
         });
     });
 
     group.bench_function("iter 100 entries", |b| {
         b.iter(|| {
-            black_box(index.iter().take(100).count());
+            std::hint::black_box(index.iter().take(100).count());
         });
     });
 
     group.bench_function("iter all", |b| {
         b.iter(|| {
-            black_box(index.iter().count());
+            std::hint::black_box(index.iter().count());
         });
     });
 
     group.bench_function("revert iter, first entry", |b| {
         b.iter(|| {
-            black_box(index.iter_reverse().next().unwrap());
+            std::hint::black_box(index.iter_reverse().next().unwrap());
         });
     });
 
     group.bench_function("reverse iter, 100 entries", |b| {
         b.iter(|| {
-            black_box(index.iter_reverse().take(100).count());
+            std::hint::black_box(index.iter_reverse().take(100).count());
         });
     });
 
     group.bench_function("reverse iter, all", |b| {
         b.iter(|| {
-            black_box(index.iter_reverse().count());
+            std::hint::black_box(index.iter_reverse().count());
         });
     });
 }

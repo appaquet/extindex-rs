@@ -30,6 +30,7 @@ fn bench_builder(c: &mut Criterion) {
 
     let sizes = [10_000, 100_000, 1_000_000];
     for size in sizes {
+        group.throughput(criterion::Throughput::Elements(size as u64));
         group.bench_with_input(BenchmarkId::new("known size", size), &size, |b, size| {
             b.iter(|| {
                 let index_file = tempfile::NamedTempFile::new().unwrap();
