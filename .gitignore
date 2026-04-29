@@ -5,3 +5,4 @@ lcov.info
 .vscode
 perf.*
 flamegraph.svg
+.direnv

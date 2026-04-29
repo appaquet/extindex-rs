@@ -41,7 +41,10 @@
                 targets = [ ];
               })
               rust-analyzer
+
               cargo-outdated
+              cargo-criterion
+              cargo-flamegraph
             ];
           };
         };
