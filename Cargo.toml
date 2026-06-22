@@ -17,7 +17,7 @@ default = ["serde"]
 serde = ["dep:serde", "bincode-next"]
 
 [dependencies]
-bincode-next = { version = "2.1.0", features = ["serde"], optional = true }
+bincode-next = { version = "3.1.1", features = ["serde"], optional = true }
 byteorder = "1.5"
 extsort = "0.5"
 log = "0.4"
